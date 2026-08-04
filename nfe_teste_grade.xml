@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35260658032958000144550010001234561876543219" versao="4.00">
+    <ide>
+      <cUF>35</cUF>
+      <cNF>87654321</cNF>
+      <natOp>Venda de Mercadoria</natOp>
+      <mod>55</mod>
+      <serie>1</serie>
+      <nNF>123456</nNF>
+      <dhEmi>2026-06-29T10:00:00-03:00</dhEmi>
+      <tpNF>1</tpNF>
+      <idDest>1</idDest>
+      <cMunFG>3550308</cMunFG>
+      <tpImp>1</tpImp>
+      <tpEmis>1</tpEmis>
+      <cDV>9</cDV>
+      <tpAmb>2</tpAmb>
+      <finNFe>1</finNFe>
+      <indFinal>1</indFinal>
+      <indPres>1</indPres>
+      <procEmi>0</procEmi>
+      <verProc>1.0.0</verProc>
+    </ide>
+    <emit>
+      <CNPJ>58032958000144</CNPJ>
+      <xNome>FORNECEDOR DE LENTES LTDA</xNome>
+      <xFant>Fornecedor de Lentes</xFant>
+      <enderEmit>
+        <xLgr>Rua das Lentes</xLgr>
+        <nro>123</nro>
+        <xBairro>Centro</xBairro>
+        <cMun>3550308</cMun>
+        <xMun>Sao Paulo</xMun>
+        <UF>SP</UF>
+        <CEP>01001000</CEP>
+        <cPais>1058</cPais>
+        <xPais>BRASIL</xPais>
+      </enderEmit>
+      <IE>111222333444</IE>
+      <CRT>3</CRT>
+    </emit>
+    <dest>
+      <CNPJ>12345678000199</CNPJ>
+      <xNome>LEO OTICA LTDA</xNome>
+      <enderDest>
+        <xLgr>Av. Paulista</xLgr>
+        <nro>1000</nro>
+        <xBairro>Bela Vista</xBairro>
+        <cMun>3550308</cMun>
+        <xMun>Sao Paulo</xMun>
+        <UF>SP</UF>
+        <CEP>01310100</CEP>
+        <cPais>1058</cPais>
+        <xPais>BRASIL</xPais>
+      </enderDest>
+      <indIEDest>9</indIEDest>
+    </dest>
+    <!-- Item 1: Código de barras existente no estoque (Seeder: 7891000000001) -->
+    <det nItem="1">
+      <prod>
+        <cProd>LENT001</cProd>
+        <cEAN>7891000000001</cEAN>
+        <xProd>Lente Visao Simples 1.56 AR SPH +6.00 CYL 0.00</xProd>
+        <NCM>90015000</NCM>
+        <CFOP>5102</CFOP>
+        <uCom>UN</uCom>
+        <qCom>10.0000</qCom>
+        <vUnCom>25.0000000000</vUnCom>
+        <vProd>250.00</vProd>
+        <cEANTrib>7891000000001</cEANTrib>
+        <uTrib>UN</uTrib>
+        <qTrib>10.0000</qTrib>
+        <vUnTrib>25.0000000000</vUnTrib>
+        <indTot>1</indTot>
+      </prod>
+    </det>
+    <!-- Item 2: Outro código de barras existente no estoque (Seeder: 7891000000002) -->
+    <det nItem="2">
+      <prod>
+        <cProd>LENT002</cProd>
+        <cEAN>7891000000002</cEAN>
+        <xProd>Lente Visao Simples 1.56 AR SPH +6.00 CYL -1.00</xProd>
+        <NCM>90015000</NCM>
+        <CFOP>5102</CFOP>
+        <uCom>UN</uCom>
+        <qCom>5.0000</qCom>
+        <vUnCom>25.0000000000</vUnCom>
+        <vProd>125.00</vProd>
+        <cEANTrib>7891000000002</cEANTrib>
+        <uTrib>UN</uTrib>
+        <qTrib>5.0000</qTrib>
+        <vUnTrib>25.0000000000</vUnTrib>
+        <indTot>1</indTot>
+      </prod>
+    </det>
+    <!-- Item 3: Código de barras INÉDITO (Simular Reconciliação / Pendências de Grade) -->
+    <det nItem="3">
+      <prod>
+        <cProd>LENT999</cProd>
+        <cEAN>7899999999999</cEAN>
+        <xProd>Lente Importada Especial HMC SPH -3.00 CYL -2.00</xProd>
+        <NCM>90015000</NCM>
+        <CFOP>5102</CFOP>
+        <uCom>UN</uCom>
+        <qCom>15.0000</qCom>
+        <vUnCom>50.0000000000</vUnCom>
+        <vProd>750.00</vProd>
+        <cEANTrib>7899999999999</cEANTrib>
+        <uTrib>UN</uTrib>
+        <qTrib>15.0000</qTrib>
+        <vUnTrib>50.0000000000</vUnTrib>
+        <indTot>1</indTot>
+      </prod>
+    </det>
+  </infNFe>
+</NFe>

@@ -1,0 +1,27 @@
+# --- Core Web Framework ---
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-multipart==0.0.9
+python-dotenv==1.0.1
+
+# --- Banco de Dados ---
+SQLAlchemy==2.0.27
+asyncpg==0.29.0
+aiosqlite==0.22.1          # Obrigatório para SQLite assíncrono (dev/local)
+
+# --- Segurança ---
+pyjwt==2.8.0
+bcrypt==4.1.2
+email-validator>=2.0.0
+
+# --- IA / LLM ---
+langchain-google-genai
+langchain-core
+
+# --- Exportações (PDF, Excel, XML) ---
+lxml==5.1.0
+pandas==2.2.0
+openpyxl==3.1.2
+reportlab==4.1.0
