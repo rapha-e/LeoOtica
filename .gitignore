@@ -57,3 +57,7 @@ htmlcov/
 # === Alembic ===
 # (mantem as migrations versionadas, mas nao os arquivos de trabalho)
 alembic/versions/*.pyc
+
+# === Uploads locais ===
+uploads/*
+!uploads/.gitkeep
