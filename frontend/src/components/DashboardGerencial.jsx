@@ -26,6 +26,7 @@ import {
   ShieldAlert,
   ArrowUpRight,
   TrendingDown,
+  ExternalLink
 } from 'lucide-react';
 
 ChartJS.register(
@@ -40,7 +41,7 @@ ChartJS.register(
   Legend
 );
 
-const DashboardGerencial = () => {
+const DashboardGerencial = ({ onNavigate }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -304,13 +305,18 @@ const DashboardGerencial = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', marginBottom: '32px' }}>
         
         {/* Bloco 1: COMERCIAL */}
-        <div className="glass-panel" style={{ borderLeft: '4px solid hsl(142, 75%, 35%)' }}>
+        <div 
+          className="glass-panel" 
+          onClick={() => onNavigate && onNavigate('billing')}
+          style={{ borderLeft: '4px solid hsl(142, 75%, 35%)', cursor: 'pointer', transition: 'all 0.2s' }}
+          title="Clique para acessar Fechamento Financeiro"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3 style={{ fontSize: '1.05rem', color: 'hsl(var(--text-primary))', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <DollarSign size={18} style={{ color: 'hsl(142, 75%, 35%)' }} /> Saúde Comercial
             </h3>
             <span style={{ fontSize: '0.75rem', fontWeight: '700', padding: '2px 8px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.1)', color: 'hsl(142, 75%, 35%)' }}>
-              Período 30d
+              Período 30d ➔
             </span>
           </div>
 
@@ -357,13 +363,18 @@ const DashboardGerencial = () => {
         </div>
 
         {/* Bloco 2: PRODUÇÃO */}
-        <div className="glass-panel" style={{ borderLeft: '4px solid hsl(35, 85%, 40%)' }}>
+        <div 
+          className="glass-panel" 
+          onClick={() => onNavigate && onNavigate('os-workflow')}
+          style={{ borderLeft: '4px solid hsl(35, 85%, 40%)', cursor: 'pointer', transition: 'all 0.2s' }}
+          title="Clique para acessar a Esteira de Produção de OS"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3 style={{ fontSize: '1.05rem', color: 'hsl(var(--text-primary))', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Activity size={18} style={{ color: 'hsl(35, 85%, 40%)' }} /> Esteira de Produção
             </h3>
             <span style={{ fontSize: '0.75rem', fontWeight: '700', padding: '2px 8px', borderRadius: '12px', background: 'rgba(217, 119, 6, 0.1)', color: 'hsl(35, 85%, 40%)' }}>
-              Fábrica Ativa
+              Fábrica Ativa ➔
             </span>
           </div>
 
@@ -391,19 +402,24 @@ const DashboardGerencial = () => {
             </div>
 
             <div style={{ padding: '10px', background: 'rgba(217, 119, 6, 0.03)', border: '1px dashed rgba(217, 119, 6, 0.2)', borderRadius: '8px', fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>
-              <strong>Nota do Chão de Fábrica:</strong> O SLA médio é calculado com base nas OSs entregues nos últimos 30 dias, comparando a data de recebimento do pedido com a saída para expedição.
+              <strong>Nota do Chão de Fábrica:</strong> O SLA médio é calculated com base nas OSs entregues nos últimos 30 dias, comparando a data de recebimento do pedido com a saída para expedição.
             </div>
           </div>
         </div>
 
         {/* Bloco 3: ESTOQUE */}
-        <div className="glass-panel" style={{ borderLeft: '4px solid hsl(190, 85%, 35%)' }}>
+        <div 
+          className="glass-panel" 
+          onClick={() => onNavigate && onNavigate('alerts')}
+          style={{ borderLeft: '4px solid hsl(190, 85%, 35%)', cursor: 'pointer', transition: 'all 0.2s' }}
+          title="Clique para acessar Alertas e Saúde do Estoque"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3 style={{ fontSize: '1.05rem', color: 'hsl(var(--text-primary))', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <RefreshCcw size={18} style={{ color: 'hsl(190, 85%, 35%)' }} /> Logística de Estoque
             </h3>
             <span style={{ fontSize: '0.75rem', fontWeight: '700', padding: '2px 8px', borderRadius: '12px', background: 'rgba(6, 182, 212, 0.1)', color: 'hsl(190, 85%, 35%)' }}>
-              Giro de Lentes
+              Giro de Lentes ➔
             </span>
           </div>
 
@@ -458,30 +474,60 @@ const DashboardGerencial = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '24px' }}>
         
         {/* Gráfico 1: Evolução Financeira */}
-        <div className="glass-panel" style={{ height: '350px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ fontSize: '1.1rem', color: 'hsl(var(--text-primary))', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <TrendingUp size={18} style={{ color: 'hsl(var(--primary))' }} /> Evolução Financeira Consolidada
-          </h3>
+        <div 
+          className="glass-panel" 
+          onClick={() => onNavigate && onNavigate('billing')}
+          style={{ height: '350px', display: 'flex', flexDirection: 'column', cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
+          title="Clique para abrir Fechamento Financeiro e Faturamento"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1.1rem', color: 'hsl(var(--text-primary))', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendingUp size={18} style={{ color: 'hsl(var(--primary))' }} /> Evolução Financeira Consolidada
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'hsl(var(--primary))', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Ver Faturamento <ExternalLink size={14} />
+            </span>
+          </div>
           <div style={{ flex: 1, position: 'relative' }}>
             <Line data={lineChartData} options={lineChartOptions} />
           </div>
         </div>
 
         {/* Gráfico 2: Saúde do Estoque e Alertas */}
-        <div className="glass-panel" style={{ height: '350px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ fontSize: '1.1rem', color: 'hsl(var(--text-primary))', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShoppingCart size={18} style={{ color: 'hsl(190, 85%, 35%)' }} /> Saúde do Estoque & Alertas Preditivos
-          </h3>
+        <div 
+          className="glass-panel" 
+          onClick={() => onNavigate && onNavigate('alerts')}
+          style={{ height: '350px', display: 'flex', flexDirection: 'column', cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
+          title="Clique para abrir Saúde do Estoque e Alertas Preditivos"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1.1rem', color: 'hsl(var(--text-primary))', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShoppingCart size={18} style={{ color: 'hsl(190, 85%, 35%)' }} /> Saúde do Estoque & Alertas Preditivos
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'hsl(190, 85%, 35%)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Ver Alertas <ExternalLink size={14} />
+            </span>
+          </div>
           <div style={{ flex: 1, position: 'relative' }}>
             <Bar data={barChartData} options={barChartOptions} />
           </div>
         </div>
 
         {/* Gráfico 3: Distribuição da Esteira (Status de OS) */}
-        <div className="glass-panel" style={{ height: '320px', display: 'flex', flexDirection: 'column', gridColumn: 'span 1' }}>
-          <h3 style={{ fontSize: '1.1rem', color: 'hsl(var(--text-primary))', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Activity size={18} style={{ color: 'hsl(35, 85%, 40%)' }} /> Distribuição de Status de OS na Fábrica
-          </h3>
+        <div 
+          className="glass-panel" 
+          onClick={() => onNavigate && onNavigate('os-workflow')}
+          style={{ height: '320px', display: 'flex', flexDirection: 'column', gridColumn: 'span 1', cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
+          title="Clique para abrir a Esteira de Produção de OS na Fábrica"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1.1rem', color: 'hsl(var(--text-primary))', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Activity size={18} style={{ color: 'hsl(35, 85%, 40%)' }} /> Distribuição de Status de OS na Fábrica
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'hsl(35, 85%, 40%)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Ver Esteira <ExternalLink size={14} />
+            </span>
+          </div>
           <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center' }}>
             <div style={{ width: '220px', height: '220px', position: 'relative' }}>
               <Doughnut data={doughnutChartData} options={doughnutChartOptions} />
@@ -503,20 +549,41 @@ const DashboardGerencial = () => {
             <CheckCircle2 size={18} style={{ color: 'hsl(142, 75%, 35%)' }} /> Resumo do Planejamento Gerencial
           </h3>
           <div style={{ fontSize: '0.9rem', color: 'hsl(var(--text-secondary))', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <p>
+            <p style={{ margin: 0 }}>
               Este painel consolida em tempo real dados transacionais e de fluxo logístico de forma a auxiliar nas decisões de compras e faturamento da fábrica Nova Lab.
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(147, 51, 234, 0.03)', border: '1px solid rgba(147, 51, 234, 0.1)', borderRadius: '8px' }}>
+            <div 
+              onClick={() => onNavigate && onNavigate('billing')}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(147, 51, 234, 0.04)', border: '1px solid rgba(147, 51, 234, 0.18)', borderRadius: '8px', transition: 'all 0.2s' }}
+              title="Clique para ir para Fechamento Financeiro"
+            >
               <span style={{ color: 'hsl(var(--primary))', fontWeight: 'bold' }}>Comercial:</span>
-              <span>Monitoramento do faturamento líquido e do ticket médio das OSs.</span>
+              <span style={{ flex: 1 }}>Monitoramento do faturamento líquido e do ticket médio das OSs.</span>
+              <span style={{ fontSize: '0.78rem', color: 'hsl(var(--primary))', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                Acessar ➔
+              </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(217, 119, 6, 0.03)', border: '1px solid rgba(217, 119, 6, 0.1)', borderRadius: '8px' }}>
+            <div 
+              onClick={() => onNavigate && onNavigate('os-workflow')}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(217, 119, 6, 0.04)', border: '1px solid rgba(217, 119, 6, 0.18)', borderRadius: '8px', transition: 'all 0.2s' }}
+              title="Clique para ir para Esteira de Produção de OS"
+            >
               <span style={{ color: 'hsl(35, 85%, 40%)', fontWeight: 'bold' }}>Produção:</span>
-              <span>Visualização da velocidade de escoamento e SLA médio da fábrica.</span>
+              <span style={{ flex: 1 }}>Visualização da velocidade de escoamento e SLA médio da fábrica.</span>
+              <span style={{ fontSize: '0.78rem', color: 'hsl(35, 85%, 40%)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                Acessar ➔
+              </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(6, 182, 212, 0.03)', border: '1px solid rgba(6, 182, 212, 0.1)', borderRadius: '8px' }}>
+            <div 
+              onClick={() => onNavigate && onNavigate('alerts')}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(6, 182, 212, 0.04)', border: '1px solid rgba(6, 182, 212, 0.18)', borderRadius: '8px', transition: 'all 0.2s' }}
+              title="Clique para ir para Alertas & Estoque"
+            >
               <span style={{ color: 'hsl(190, 85%, 35%)', fontWeight: 'bold' }}>Estoque:</span>
-              <span>Previsão de rupturas e cálculo de compras automáticas.</span>
+              <span style={{ flex: 1 }}>Previsão de rupturas e cálculo de compras automáticas.</span>
+              <span style={{ fontSize: '0.78rem', color: 'hsl(190, 85%, 35%)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                Acessar ➔
+              </span>
             </div>
           </div>
         </div>

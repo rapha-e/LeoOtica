@@ -196,7 +196,10 @@ const DashboardAlerts = () => {
                 {purchaseSuggestions.map((item) => (
                   <tr key={item.id}>
                     <td style={{ textAlign: 'left', paddingLeft: '15px', color: 'white' }}>
-                      {item.brand} | {item.material} | Ind {item.refractive_index.toFixed(2)} | {item.treatment}
+                      <span style={{ padding: '2px 6px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', background: item.item_type === 'BLOCO' ? 'rgba(147,51,234,0.3)' : 'rgba(37,99,235,0.3)', color: item.item_type === 'BLOCO' ? '#c084fc' : '#60a5fa', marginRight: '8px' }}>
+                        {item.item_type || 'LENTE'}
+                      </span>
+                      {item.brand} | {item.material} | Ind {item.refractive_index ? parseFloat(item.refractive_index).toFixed(2) : ''} | {item.treatment}
                     </td>
                     <td style={{ fontWeight: 'bold' }}>
                       {item.spherical > 0 ? `+${item.spherical.toFixed(2)}` : item.spherical.toFixed(2)} Esf / {item.cylindrical.toFixed(2)} Cil

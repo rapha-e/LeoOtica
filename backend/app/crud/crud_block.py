@@ -10,9 +10,9 @@ from backend.app.schemas.block import BlockModelCreate, BlockModelUpdate, BlockG
 
 DEFAULT_BASE_CURVES = [Decimal("2.00"), Decimal("4.00"), Decimal("6.00")]
 DEFAULT_ADDITIONS = [
-    Decimal("0.00"), Decimal("1.00"), Decimal("1.25"), Decimal("1.50"),
+    Decimal("0.75"), Decimal("1.00"), Decimal("1.25"), Decimal("1.50"),
     Decimal("1.75"), Decimal("2.00"), Decimal("2.25"), Decimal("2.50"),
-    Decimal("2.75"), Decimal("3.00")
+    Decimal("2.75"), Decimal("3.00"), Decimal("3.25")
 ]
 
 def parse_decimal_list(config_str: Optional[str], default_list: List[Decimal]) -> List[Decimal]:
@@ -96,7 +96,7 @@ async def update_block_model(db: AsyncSession, model_id: uuid.UUID, data: BlockM
     # Regenera/garante que as células para as bases/adições estejam criadas
     await generate_grid_for_model(db, block_model.id)
     await db.commit()
-    return await get_block_model_by_id(db, block_model.id)
+    return await get_block_model_by_id(db, model_id)
 
 async def delete_block_model(db: AsyncSession, model_id: uuid.UUID) -> bool:
     """Exclui permanentemente um modelo de bloco e suas células de grade."""
@@ -108,7 +108,7 @@ async def delete_block_model(db: AsyncSession, model_id: uuid.UUID) -> bool:
     return True
 
 async def generate_grid_for_model(db: AsyncSession, model_id: uuid.UUID) -> List[BlockGridItem]:
-    """Gera as células da grade para o modelo de bloco com base nas bases e adições configuradas."""
+    """Gera as células da grade para o modelo de bloco com suporte a olho Direito (D) e Esquerdo (E)."""
     block_model = await get_block_model_by_id(db, model_id)
     
     bases = parse_decimal_list(block_model.base_curves_config if block_model else None, DEFAULT_BASE_CURVES)
@@ -118,24 +118,62 @@ async def generate_grid_for_model(db: AsyncSession, model_id: uuid.UUID) -> List
         select(BlockGridItem).where(BlockGridItem.block_model_id == model_id)
     )
     existing_items = existing_res.scalars().all()
-    existing_set = {(float(i.base_curve), float(i.addition)) for i in existing_items}
+    
+    # Migra automaticamente qualquer item legado 'AMBOS' em sub-itens explícitos 'D' e 'E'
+    ambos_items = [i for i in existing_items if i.eye_side == "AMBOS"]
+    if ambos_items:
+        for old_item in ambos_items:
+            qty_d = (old_item.quantity_available + 1) // 2
+            qty_e = old_item.quantity_available // 2
+            
+            item_d = BlockGridItem(
+                block_model_id=model_id,
+                base_curve=old_item.base_curve,
+                addition=old_item.addition,
+                eye_side="D",
+                quantity_available=qty_d,
+                min_stock=old_item.min_stock,
+                barcode=f"{old_item.barcode}-D" if old_item.barcode else None,
+                location_tag=f"{old_item.location_tag}-D" if old_item.location_tag else None
+            )
+            item_e = BlockGridItem(
+                block_model_id=model_id,
+                base_curve=old_item.base_curve,
+                addition=old_item.addition,
+                eye_side="E",
+                quantity_available=qty_e,
+                min_stock=old_item.min_stock,
+                barcode=f"{old_item.barcode}-E" if old_item.barcode else None,
+                location_tag=f"{old_item.location_tag}-E" if old_item.location_tag else None
+            )
+            db.add_all([item_d, item_e])
+            await db.delete(old_item)
+        await db.commit()
+
+        existing_res = await db.execute(
+            select(BlockGridItem).where(BlockGridItem.block_model_id == model_id)
+        )
+        existing_items = existing_res.scalars().all()
+
+    existing_set = {(float(i.base_curve), float(i.addition), i.eye_side) for i in existing_items}
 
     new_items = []
     for base in bases:
         for add in additions:
-            key = (float(base), float(add))
-            if key not in existing_set:
-                item = BlockGridItem(
-                    block_model_id=model_id,
-                    base_curve=base,
-                    addition=add,
-                    eye_side="AMBOS",
-                    quantity_available=0,
-                    quantity_reserved=0,
-                    min_stock=2
-                )
-                db.add(item)
-                new_items.append(item)
+            for side in ["D", "E"]:
+                key = (float(base), float(add), side)
+                if key not in existing_set:
+                    item = BlockGridItem(
+                        block_model_id=model_id,
+                        base_curve=base,
+                        addition=add,
+                        eye_side=side,
+                        quantity_available=0,
+                        quantity_reserved=0,
+                        min_stock=2
+                    )
+                    db.add(item)
+                    new_items.append(item)
 
     if new_items:
         await db.commit()
@@ -143,12 +181,12 @@ async def generate_grid_for_model(db: AsyncSession, model_id: uuid.UUID) -> List
     res = await db.execute(
         select(BlockGridItem)
         .where(BlockGridItem.block_model_id == model_id)
-        .order_by(BlockGridItem.base_curve.asc(), BlockGridItem.addition.asc())
+        .order_by(BlockGridItem.base_curve.asc(), BlockGridItem.addition.asc(), BlockGridItem.eye_side.asc())
     )
     return list(res.scalars().all())
 
 async def get_grid_matrix_data(db: AsyncSession, model_id: uuid.UUID) -> Dict[str, Any]:
-    """Retorna os dados estruturados da matriz de blocos (bases, adições, e grade)."""
+    """Retorna os dados estruturados da matriz de blocos (bases, adições, subcolunas D/E e grade)."""
     block_model = await get_block_model_by_id(db, model_id)
     items = await generate_grid_for_model(db, model_id)
 
@@ -160,16 +198,29 @@ async def get_grid_matrix_data(db: AsyncSession, model_id: uuid.UUID) -> Dict[st
 
     grid_map = {}
     for item in items:
-        k = f"{float(item.base_curve):.2f}_{float(item.addition):.2f}"
-        grid_map[k] = {
+        k_side = f"{float(item.base_curve):.2f}_{float(item.addition):.2f}_{item.eye_side}"
+        item_obj = {
             "id": str(item.id),
             "base_curve": float(item.base_curve),
             "addition": float(item.addition),
+            "eye_side": item.eye_side,
             "quantity_available": item.quantity_available,
             "min_stock": item.min_stock,
             "barcode": item.barcode,
             "location_tag": item.location_tag
         }
+        grid_map[k_side] = item_obj
+
+        k_agg = f"{float(item.base_curve):.2f}_{float(item.addition):.2f}"
+        if k_agg not in grid_map:
+            grid_map[k_agg] = {
+                "base_curve": float(item.base_curve),
+                "addition": float(item.addition),
+                "quantity_available": 0,
+                "items": []
+            }
+        grid_map[k_agg]["quantity_available"] += item.quantity_available
+        grid_map[k_agg]["items"].append(item_obj)
 
     return {
         "model": {
@@ -182,7 +233,7 @@ async def get_grid_matrix_data(db: AsyncSession, model_id: uuid.UUID) -> Dict[st
             "sale_price": float(block_model.sale_price) if block_model else 95.0,
             "is_active": block_model.is_active if block_model else True,
             "base_curves_config": block_model.base_curves_config if block_model else "2.00, 4.00, 6.00",
-            "additions_config": block_model.additions_config if block_model else "0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00"
+            "additions_config": block_model.additions_config if block_model else "0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25"
         },
         "base_curves": bases,
         "additions": additions,

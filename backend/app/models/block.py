@@ -18,7 +18,7 @@ class BlockModel(Base):
     sale_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("95.00"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     base_curves_config: Mapped[Optional[str]] = mapped_column(String(255), default="2.00, 4.00, 6.00", nullable=True)
-    additions_config: Mapped[Optional[str]] = mapped_column(String(255), default="0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00", nullable=True)
+    additions_config: Mapped[Optional[str]] = mapped_column(String(255), default="0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25", nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     # Relacionamento com os itens de grade de blocos

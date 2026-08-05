@@ -106,9 +106,11 @@ async def get_accounts_receivable(db: AsyncSession, status_filter: Optional[str]
     for item in items:
         days_overdue = 0
         current_status = item.status
-        if current_status in ["PENDENTE", "RECEBIDO_PARCIAL"] and item.due_date < now:
+        if current_status != "RECEBIDO" and item.due_date < now:
             current_status = "ATRASADO"
-            days_overdue = (now - item.due_date).days
+            days_overdue = max(1, (now - item.due_date).days)
+        elif current_status == "ATRASADO":
+            days_overdue = max(1, (now - item.due_date).days)
             
         res.append({
             "id": item.id,
@@ -297,7 +299,7 @@ async def get_executive_financial_kpis(db: AsyncSession) -> Dict[str, Any]:
             store_ranking[s_name] = {"total_amount": 0.0, "total_received": 0.0, "total_overdue": 0.0, "count": 0}
         store_ranking[s_name]["total_amount"] += r["amount"]
         store_ranking[s_name]["total_received"] += r["amount_received"]
-        if r["days_overdue"] > 0:
+        if r["status"] == "ATRASADO" or r["days_overdue"] > 0:
             store_ranking[s_name]["total_overdue"] += r["balance_due"]
         store_ranking[s_name]["count"] += 1
         

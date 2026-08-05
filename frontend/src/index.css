@@ -349,6 +349,67 @@ p {
   font-weight: 700;
 }
 
+/* Tabela ultra-compacta da Grade de Blocos */
+.optical-grid.block-grid-table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+  text-align: center !important;
+  min-width: 0 !important;
+}
+
+.optical-grid.block-grid-table th,
+.optical-grid.block-grid-table td {
+  padding: 2px 1px !important;
+  font-size: 0.72rem !important;
+  border: 1px solid rgba(224, 230, 240, 0.4) !important;
+  box-sizing: border-box !important;
+}
+
+.optical-grid.block-grid-table .lens-cell {
+  min-width: 0 !important;
+  width: auto !important;
+  height: 42px !important;
+  padding: 1px 1px !important;
+}
+
+.optical-grid.block-grid-table .lens-qty {
+  font-size: 0.82rem !important;
+  font-weight: 800 !important;
+  line-height: 1.1 !important;
+}
+
+.optical-grid.block-grid-table .lens-loc {
+  font-size: 0.55rem !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  display: block !important;
+  margin-top: 1px !important;
+}
+
+/* Subcolunas Olho Direito (D) e Olho Esquerdo (E) */
+.sub-header-d {
+  color: #00f2fe !important;
+  background: rgba(0, 242, 254, 0.22) !important;
+  font-weight: 900 !important;
+  font-size: 0.78rem !important;
+  text-align: center !important;
+  padding: 3px 1px !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.sub-header-e {
+  color: #c084fc !important;
+  background: rgba(192, 132, 252, 0.22) !important;
+  font-weight: 900 !important;
+  font-size: 0.78rem !important;
+  text-align: center !important;
+  padding: 3px 1px !important;
+  border-right: 2px solid rgba(255, 255, 255, 0.15) !important;
+}
+
 /* Célula de Lente */
 .lens-cell {
   position: relative;

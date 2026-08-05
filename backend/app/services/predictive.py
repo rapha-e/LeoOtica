@@ -17,10 +17,9 @@ async def calculate_predictive_alerts(
     coverage_days: int = 15
 ) -> List[Dict[str, Any]]:
     """
-    Analisa os consumos e estoque lendo diretamente da view consolidada
-    mv_lens_consumption_velocity, otimizando o processamento do motor preditivo.
+    Analisa os consumos e estoque de Lentes Acabadas e Blocos Semiacabados.
     """
-    # Consulta a view SQL consolidada (Materialized no PG, Comum no SQLite)
+    # Consulta a view SQL consolidada para Lentes
     query = text("SELECT * FROM mv_lens_consumption_velocity;")
     res = await db.execute(query)
     rows = res.all()
@@ -28,15 +27,8 @@ async def calculate_predictive_alerts(
     alerts = []
     
     for row in rows:
-        # Colunas retornadas pela view:
-        # 0: lens_inventory_id, 1: brand, 2: material, 3: refractive_index, 4: treatment,
-        # 5: diameter, 6: spherical, 7: cylindrical, 8: quantity_available, 9: location_tag,
-        # 10: barcode, 11: units_consumed_30_days, 12: daily_burn_rate
-        
         daily_rate = float(row[12])
         safety_stock = daily_rate * safety_days
-        
-        # Ponto de Ressuprimento (Reorder Point - ROP)
         reorder_point = (daily_rate * lead_time_days) + safety_stock
         
         current_stock = row[8]
@@ -47,14 +39,14 @@ async def calculate_predictive_alerts(
         else:
             status = "NORMAL"
             
-        # Sugestão de Compra
         suggested = 0
         if daily_rate > 0:
             target_stock = (daily_rate * coverage_days) + safety_stock
             suggested = max(0, int(target_stock - current_stock))
             
         alerts.append({
-            "id": row[0],
+            "id": str(row[0]),
+            "item_type": "LENTE",
             "brand": row[1],
             "material": row[2],
             "refractive_index": float(row[3]),
@@ -66,6 +58,62 @@ async def calculate_predictive_alerts(
             "quantity_available": current_stock,
             "location_tag": row[9] or "N/A",
             "total_out_30_days": int(row[11]),
+            "daily_consumption_rate": round(daily_rate, 4),
+            "reorder_point": round(reorder_point, 2),
+            "status": status,
+            "suggested_purchase": suggested
+        })
+
+    # Consulta a grade de Blocos Semiacabados
+    from backend.app.models.block import BlockGridItem
+    from sqlalchemy import and_
+    block_stmt = select(BlockGridItem).options(selectinload(BlockGridItem.block_model))
+    block_items = (await db.execute(block_stmt)).scalars().all()
+    
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    for bitem in block_items:
+        if not bitem.block_model or not bitem.block_model.is_active:
+            continue
+        current_stock = bitem.quantity_available
+        mov_stmt = select(func.coalesce(func.sum(StockMovement.quantity), 0)).where(
+            and_(
+                StockMovement.lens_inventory_id == bitem.id,
+                StockMovement.movement_type == 'OUT',
+                StockMovement.movement_date >= thirty_days_ago
+            )
+        )
+        consumed_30 = (await db.execute(mov_stmt)).scalar() or 0
+        daily_rate = float(consumed_30) / 30.0
+        safety_stock = daily_rate * safety_days
+        reorder_point = (daily_rate * lead_time_days) + safety_stock
+        
+        if current_stock == 0:
+            status = "RUPTURA"
+        elif current_stock <= reorder_point:
+            status = "ALERTA"
+        else:
+            status = "NORMAL"
+            
+        suggested = 0
+        if daily_rate > 0:
+            target_stock = (daily_rate * coverage_days) + safety_stock
+            suggested = max(0, int(target_stock - current_stock))
+            
+        alerts.append({
+            "id": str(bitem.id),
+            "item_type": "BLOCO",
+            "brand": bitem.block_model.brand,
+            "refractive_index": float(getattr(bitem.block_model, 'refractive_index', 1.56) or 1.56),
+            "cost_price": float(getattr(bitem.block_model, 'cost_price', 35.00) or 35.00),
+            "sale_price": float(getattr(bitem.block_model, 'sale_price', 95.00) or 95.00),
+            "treatment": bitem.block_model.name,
+            "diameter": "N/A",
+            "spherical": float(bitem.base_curve),
+            "cylindrical": float(bitem.addition),
+            "barcode": bitem.barcode or "N/A",
+            "quantity_available": current_stock,
+            "location_tag": bitem.location_tag or "N/A",
+            "total_out_30_days": int(consumed_30),
             "daily_consumption_rate": round(daily_rate, 4),
             "reorder_point": round(reorder_point, 2),
             "status": status,
@@ -263,9 +311,14 @@ def generate_purchase_plan_excel(alerts_data: List[Dict[str, Any]]) -> bytes:
     counter = 1
     
     for item in filtered_data:
+        item_type = item.get('item_type', 'LENTE')
+        prefix = "BLOC" if item_type == "BLOCO" else "LENS"
         sku_brand = item['brand'][:3].upper().replace(" ", "")
-        sku = f"LENS-{int(item['refractive_index']*100)}-{sku_brand}-{counter:03d}"
-        desc = f"{item['brand']} {item['material']} {item['treatment']} Ø{item['diameter']}mm"
+        sku = f"{prefix}-{int(item['refractive_index']*100)}-{sku_brand}-{counter:03d}"
+        if item_type == "BLOCO":
+            desc = f"[BLOCO] {item['brand']} {item['material']} {item['treatment']}"
+        else:
+            desc = f"[LENTE] {item['brand']} {item['material']} {item['treatment']} Ø{item['diameter']}mm"
         
         ws.cell(row=current_row, column=2, value=sku)
         ws.cell(row=current_row, column=3, value=desc)

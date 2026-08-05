@@ -16,6 +16,9 @@ export default function FinanceiroCorporativo() {
   const [payables, setPayables] = useState([]);
   const [cashFlow, setCashFlow] = useState([]);
   const [kpis, setKpis] = useState(null);
+
+  const [receivablesFilter, setReceivablesFilter] = useState('ALL'); // 'ALL' | 'RECEBIDO' | 'ATRASADO'
+  const [payablesFilter, setPayablesFilter] = useState('ALL'); // 'ALL' | 'PENDENTE' | 'PAGO'
   
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [selectedReceivable, setSelectedReceivable] = useState(null);
@@ -99,6 +102,18 @@ export default function FinanceiroCorporativo() {
   const totalOutflow = payables.reduce((acc, p) => acc + (p.amount_paid || 0), 0);
   const netBalance = totalInflow - totalOutflow;
 
+  const filteredReceivables = receivables.filter(rec => {
+    if (receivablesFilter === 'RECEBIDO') return rec.status === 'RECEBIDO' || rec.amount_received >= rec.amount;
+    if (receivablesFilter === 'ATRASADO') return rec.status === 'ATRASADO' || rec.days_overdue > 0;
+    return true;
+  });
+
+  const filteredPayables = payables.filter(pay => {
+    if (payablesFilter === 'PENDENTE') return pay.status !== 'PAGO';
+    if (payablesFilter === 'PAGO') return pay.status === 'PAGO';
+    return true;
+  });
+
   return (
     <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
       {/* Cabeçalho */}
@@ -121,33 +136,33 @@ export default function FinanceiroCorporativo() {
         </button>
       </div>
 
-      {/* Cards de KPIs Principais (Clicáveis para atalho rápido) */}
+      {/* Cards de KPIs Principais (Clicáveis para atalho rápido com filtro automático) */}
       {kpis && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <div 
-            onClick={() => setActiveTab('receivables')}
+            onClick={() => { setActiveTab('receivables'); setReceivablesFilter('ALL'); }}
             style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.08), rgba(37,99,235,0.02))', border: '1px solid rgba(37,99,235,0.3)', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'transform 0.15s' }}
           >
             <div style={{ fontSize: '0.8rem', color: '#2563eb', fontWeight: 700, textTransform: 'uppercase' }}>Faturado Total</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'hsl(var(--text-primary))', marginTop: '4px' }}>
               {formatCurrency(kpis?.total_billed)}
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 600, marginTop: '4px' }}>Clique para abrir Contas a Receber ➔</div>
+            <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 600, marginTop: '4px' }}>Clique para abrir Todas ➔</div>
           </div>
 
           <div 
-            onClick={() => setActiveTab('receivables')}
+            onClick={() => { setActiveTab('receivables'); setReceivablesFilter('RECEBIDO'); }}
             style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.02))', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'transform 0.15s' }}
           >
             <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700, textTransform: 'uppercase' }}>Recebido (Liquidado)</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#10b981', marginTop: '4px' }}>
               {formatCurrency(kpis?.total_received)}
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, marginTop: '4px' }}>Clique para ver recebimentos ➔</div>
+            <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, marginTop: '4px' }}>Clique para ver somente liquidados ➔</div>
           </div>
 
           <div 
-            onClick={() => setActiveTab('receivables')}
+            onClick={() => { setActiveTab('receivables'); setReceivablesFilter('ATRASADO'); }}
             style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02))', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'transform 0.15s' }}
           >
             <div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 700, textTransform: 'uppercase' }}>Vencido (Inadimplência)</div>
@@ -155,19 +170,19 @@ export default function FinanceiroCorporativo() {
               {formatCurrency(kpis?.total_overdue)}
             </div>
             <div style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: 600, marginTop: '4px' }}>
-              Taxa de Inadimplência: {kpis?.delinquency_rate || 0}% ➔
+              Taxa: {kpis?.delinquency_rate || 0}% | Ver somente atrasados ➔
             </div>
           </div>
 
           <div 
-            onClick={() => setActiveTab('payables')}
+            onClick={() => { setActiveTab('payables'); setPayablesFilter('PENDENTE'); }}
             style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02))', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'transform 0.15s' }}
           >
             <div style={{ fontSize: '0.8rem', color: '#d97706', fontWeight: 700, textTransform: 'uppercase' }}>Contas a Pagar Pendentes</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#d97706', marginTop: '4px' }}>
               {formatCurrency(kpis?.payables_summary?.total_pending)}
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#d97706', fontWeight: 600, marginTop: '4px' }}>Clique para abrir Contas a Pagar ➔</div>
+            <div style={{ fontSize: '0.75rem', color: '#d97706', fontWeight: 600, marginTop: '4px' }}>Clique para ver somente pendentes ➔</div>
           </div>
         </div>
       )}
@@ -219,7 +234,21 @@ export default function FinanceiroCorporativo() {
       {/* Conteúdo da Aba 1: Contas a Receber */}
       {activeTab === 'receivables' && (
         <div style={{ background: 'rgba(255,255,255,0.95)', color: '#0f172a', border: '1px solid rgba(224,230,240,0.8)', borderRadius: '12px', padding: '20px' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', color: '#0f172a' }}>Gestão de Contas a Receber por Ótica</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>Gestão de Contas a Receber por Ótica</h3>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Filtrar:</span>
+              <button onClick={() => setReceivablesFilter('ALL')} style={{ padding: '5px 12px', borderRadius: '14px', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: 'pointer', background: receivablesFilter === 'ALL' ? '#2563eb' : '#e2e8f0', color: receivablesFilter === 'ALL' ? '#fff' : '#475569' }}>
+                Todos ({receivables.length})
+              </button>
+              <button onClick={() => setReceivablesFilter('RECEBIDO')} style={{ padding: '5px 12px', borderRadius: '14px', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: 'pointer', background: receivablesFilter === 'RECEBIDO' ? '#10b981' : '#e2e8f0', color: receivablesFilter === 'RECEBIDO' ? '#fff' : '#475569' }}>
+                Liquidados ({receivables.filter(r => r.status === 'RECEBIDO' || r.amount_received >= r.amount).length})
+              </button>
+              <button onClick={() => setReceivablesFilter('ATRASADO')} style={{ padding: '5px 12px', borderRadius: '14px', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: 'pointer', background: receivablesFilter === 'ATRASADO' ? '#ef4444' : '#e2e8f0', color: receivablesFilter === 'ATRASADO' ? '#fff' : '#475569' }}>
+                Vencidos / Inadimplentes ({receivables.filter(r => r.status === 'ATRASADO' || r.days_overdue > 0).length})
+              </button>
+            </div>
+          </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
               <tr style={{ background: 'rgba(15,23,42,0.04)', borderBottom: '2px solid rgba(224,230,240,0.8)', color: '#475569', textAlign: 'left' }}>
@@ -233,18 +262,18 @@ export default function FinanceiroCorporativo() {
               </tr>
             </thead>
             <tbody>
-              {receivables.length === 0 ? (
+              {filteredReceivables.length === 0 ? (
                 <tr>
                   <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
-                    Nenhum título a receber pendente no momento. As faturas fechadas aparecerão aqui automaticamente.
+                    Nenhum título localizado para o filtro selecionado.
                   </td>
                 </tr>
               ) : (
-                receivables.map((rec) => (
+                filteredReceivables.map((rec) => (
                   <tr key={rec.id} style={{ borderBottom: '1px solid rgba(224,230,240,0.5)', background: rec.status === 'ATRASADO' ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
                     <td style={{ padding: '10px', fontWeight: 600, color: '#0f172a' }}>{rec.optical_store_name}</td>
                     <td style={{ padding: '10px', color: '#334155' }}>{rec.description}</td>
-                    <td style={{ padding: '10px', color: '#334155' }}>{new Date(rec.due_date).toLocaleDateString('pt-BR')}</td>
+                    <td style={{ padding: '10px', color: '#334155' }}>{rec.due_date ? new Date(rec.due_date).toLocaleDateString('pt-BR') : '-'}</td>
                     <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600, color: '#0f172a' }}>{formatCurrency(rec.amount)}</td>
                     <td style={{ padding: '10px', textAlign: 'right', color: '#10b981', fontWeight: 600 }}>{formatCurrency(rec.amount_received)}</td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
@@ -277,8 +306,22 @@ export default function FinanceiroCorporativo() {
       {/* Conteúdo da Aba 2: Contas a Pagar */}
       {activeTab === 'payables' && (
         <div style={{ background: 'rgba(255,255,255,0.95)', color: '#0f172a', border: '1px solid rgba(224,230,240,0.8)', borderRadius: '12px', padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>Contas a Pagar da Fábrica</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>Contas a Pagar da Fábrica</h3>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Filtrar:</span>
+                <button onClick={() => setPayablesFilter('ALL')} style={{ padding: '4px 10px', borderRadius: '14px', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: 'pointer', background: payablesFilter === 'ALL' ? '#2563eb' : '#e2e8f0', color: payablesFilter === 'ALL' ? '#fff' : '#475569' }}>
+                  Todas ({payables.length})
+                </button>
+                <button onClick={() => setPayablesFilter('PENDENTE')} style={{ padding: '4px 10px', borderRadius: '14px', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: 'pointer', background: payablesFilter === 'PENDENTE' ? '#d97706' : '#e2e8f0', color: payablesFilter === 'PENDENTE' ? '#fff' : '#475569' }}>
+                  Somente Pendentes ({payables.filter(p => p.status !== 'PAGO').length})
+                </button>
+                <button onClick={() => setPayablesFilter('PAGO')} style={{ padding: '4px 10px', borderRadius: '14px', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: 'pointer', background: payablesFilter === 'PAGO' ? '#10b981' : '#e2e8f0', color: payablesFilter === 'PAGO' ? '#fff' : '#475569' }}>
+                  Somente Pagas ({payables.filter(p => p.status === 'PAGO').length})
+                </button>
+              </div>
+            </div>
             <button
               onClick={() => setPayableModalOpen(true)}
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
@@ -299,18 +342,18 @@ export default function FinanceiroCorporativo() {
               </tr>
             </thead>
             <tbody>
-              {payables.length === 0 ? (
+              {filteredPayables.length === 0 ? (
                 <tr>
                   <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
-                    Nenhuma conta a pagar registrada. Clique no botão acima para cadastrar novos compromissos financeiros.
+                    Nenhuma conta localizada para o filtro selecionado.
                   </td>
                 </tr>
               ) : (
-                payables.map((pay) => (
+                filteredPayables.map((pay) => (
                   <tr key={pay.id} style={{ borderBottom: '1px solid rgba(224,230,240,0.5)' }}>
                     <td style={{ padding: '10px', fontWeight: 600, color: '#0f172a' }}>{pay.supplier_name}</td>
                     <td style={{ padding: '10px', color: '#334155' }}>{pay.description} {pay.document_number ? `(${pay.document_number})` : ''}</td>
-                    <td style={{ padding: '10px', color: '#334155' }}>{new Date(pay.due_date).toLocaleDateString('pt-BR')}</td>
+                    <td style={{ padding: '10px', color: '#334155' }}>{pay.due_date ? new Date(pay.due_date).toLocaleDateString('pt-BR') : '-'}</td>
                     <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600, color: '#0f172a' }}>{formatCurrency(pay.amount)}</td>
                     <td style={{ padding: '10px', textAlign: 'right', color: '#10b981', fontWeight: 600 }}>{formatCurrency(pay.amount_paid)}</td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>

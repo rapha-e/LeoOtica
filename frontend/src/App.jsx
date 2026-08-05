@@ -470,22 +470,13 @@ function App() {
                 </button>
 
                 {currentUser.role === 'Administrador' && (
-                  <>
-                    <button 
-                      type="button"
-                      className={`dropdown-item ${activeTab === 'finance-corp' ? 'active' : ''}`}
-                      onClick={() => { setActiveTab('finance-corp'); setOpenDropdown(null); }}
-                    >
-                      <Building2 size={14} /> Financeiro Corporativo
-                    </button>
-                    <button 
-                      type="button"
-                      className={`dropdown-item ${activeTab === 'executive-dashboard' ? 'active' : ''}`}
-                      onClick={() => { setActiveTab('executive-dashboard'); setOpenDropdown(null); }}
-                    >
-                      <BarChart3 size={14} /> Dashboard Executivo
-                    </button>
-                  </>
+                  <button 
+                    type="button"
+                    className={`dropdown-item ${['executive-dashboard', 'finance-corp'].includes(activeTab) ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('executive-dashboard'); setOpenDropdown(null); }}
+                  >
+                    <BarChart3 size={14} /> Dashboard Executivo Aprimorado
+                  </button>
                 )}
               </div>
             )}
@@ -650,14 +641,10 @@ function App() {
         )}
         
         {activeTab === 'dashboard-gerencial' && (
-          <DashboardGerencial />
+          <DashboardGerencial onNavigate={(tab) => setActiveTab(tab)} />
         )}
 
-        {activeTab === 'finance-corp' && currentUser?.role === 'Administrador' && (
-          <FinanceiroCorporativo />
-        )}
-
-        {activeTab === 'executive-dashboard' && currentUser?.role === 'Administrador' && (
+        {['executive-dashboard', 'finance-corp'].includes(activeTab) && currentUser?.role === 'Administrador' && (
           <DashboardExecutivo onNavigate={(tab) => setActiveTab(tab)} />
         )}
 

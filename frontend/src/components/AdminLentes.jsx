@@ -68,12 +68,14 @@ const AdminLentes = () => {
 
     // Filtro por marca
     if (filterBrand) {
-      result = result.filter(m => m.brand === filterBrand);
+      const brandLower = filterBrand.trim().toLowerCase();
+      result = result.filter(m => (m.brand || '').trim().toLowerCase() === brandLower);
     }
 
     // Filtro por tratamento
     if (filterTreatment) {
-      result = result.filter(m => m.treatment === filterTreatment);
+      const treatmentLower = filterTreatment.trim().toLowerCase();
+      result = result.filter(m => (m.treatment || '').trim().toLowerCase() === treatmentLower);
     }
 
     setFilteredModels(result);
@@ -180,8 +182,26 @@ const AdminLentes = () => {
   };
 
   // Coleta valores únicos para os filtros do cabeçalho
-  const uniqueBrands = [...new Set(models.map(m => m.brand))];
-  const uniqueTreatments = [...new Set(models.map(m => m.treatment))];
+  const getUniqueNormalizedItems = (list) => {
+    const map = new Map();
+    list.filter(Boolean).forEach(raw => {
+      const trimmed = String(raw).trim();
+      if (!trimmed) return;
+      const lower = trimmed.toLowerCase();
+      if (!map.has(lower)) {
+        map.set(lower, trimmed);
+      } else {
+        const existing = map.get(lower);
+        if (existing === existing.toLowerCase() && trimmed !== trimmed.toLowerCase()) {
+          map.set(lower, trimmed);
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+  };
+
+  const uniqueBrands = getUniqueNormalizedItems(models.map(m => m.brand));
+  const uniqueTreatments = getUniqueNormalizedItems(models.map(m => m.treatment));
 
   return (
     <div className="glass-panel" style={{ width: '100%' }}>

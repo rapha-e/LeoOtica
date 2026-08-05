@@ -33,6 +33,12 @@ class SupplierOrderCreate(BaseModel):
     notes: Optional[str] = None
     items: List[SupplierOrderItemCreate] = []
 
+class SupplierOrderUpdate(BaseModel):
+    supplier_name: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    items: Optional[List[SupplierOrderItemCreate]] = None
+
 class SupplierOrderResponse(BaseModel):
     id: uuid.UUID
     order_number: str

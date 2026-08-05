@@ -62,7 +62,7 @@ async def reset_clean_db():
             must_change_password=False
         )
         
-        session.add_all([user_suporte_1, user_suporte_2])
+        session.add_all([user_suporte_1, user_suporte_2, user_admin])
         await session.commit()
 
         print("Inicializando parametros padroes do sistema...")

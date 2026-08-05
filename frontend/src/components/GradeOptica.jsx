@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { LensService, InventoryService } from '../services/api';
-import { ShieldAlert, MapPin, Eye, EyeOff, Search, Layers, Edit, Save, Plus, Minus, BarChart2, ShieldCheck } from 'lucide-react';
+import { ShieldAlert, MapPin, Eye, EyeOff, Search, Layers, Edit, Save, Plus, Minus, BarChart2, ShieldCheck, FileText } from 'lucide-react';
 
 const GradeOptica = ({ onOpenManualInsert }) => {
 
@@ -137,9 +137,10 @@ const GradeOptica = ({ onOpenManualInsert }) => {
     );
 
     if (filterTreatment) {
+      const targetLower = filterTreatment.trim().toLowerCase();
       matchingItems = matchingItems.filter(item => {
-        const itemTreatment = item.lens_model?.treatment || '';
-        return itemTreatment.toLowerCase().includes(filterTreatment.toLowerCase());
+        const itemTreatment = (item.lens_model?.treatment || '').trim().toLowerCase();
+        return itemTreatment === targetLower || itemTreatment.includes(targetLower);
       });
     }
 
@@ -163,6 +164,16 @@ const GradeOptica = ({ onOpenManualInsert }) => {
     if (!item) return 'lens-cell empty';
     const qty = item.quantity_available !== undefined ? item.quantity_available : 0;
     if (qty === 0) return 'lens-cell rupture';
+
+    if (item.isConsolidated && item.items && item.items.length > 0) {
+      const hasRupture = item.items.some(i => (i.quantity_available || 0) === 0);
+      const hasCritical = item.items.some(i => (i.quantity_available || 0) >= 1 && (i.quantity_available || 0) <= 2);
+      const hasLow = item.items.some(i => (i.quantity_available || 0) >= 3 && (i.quantity_available || 0) <= 4);
+      if (hasRupture) return 'lens-cell rupture';
+      if (hasCritical) return 'lens-cell critical';
+      if (hasLow) return 'lens-cell low';
+    }
+
     if (qty >= 1 && qty <= 2) return 'lens-cell critical';
     if (qty >= 3 && qty <= 4) return 'lens-cell low';
     return 'lens-cell normal';
@@ -253,6 +264,120 @@ const GradeOptica = ({ onOpenManualInsert }) => {
 
   const selectedModel = models.find(m => m.id.toString() === selectedModelId);
 
+  // Lista deduplicada case-insensitive de tratamentos
+  const uniqueTreatmentsMap = new Map();
+  models.forEach(m => {
+    if (m.treatment && m.treatment.trim()) {
+      const raw = m.treatment.trim();
+      const key = raw.toLowerCase();
+      if (!uniqueTreatmentsMap.has(key)) {
+        uniqueTreatmentsMap.set(key, raw);
+      }
+    }
+  });
+  const uniqueTreatments = Array.from(uniqueTreatmentsMap.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  const handleExportPDF = (itemsList = null) => {
+    const criticalItems = gridData.filter(i => (i.quantity_available || 0) <= 2);
+    const itemsToExport = itemsList || criticalItems;
+    const modelName = selectedModel ? `${selectedModel.brand} - ${selectedModel.name}` : 'Todas as Marcas e Modelos';
+    const nowStr = new Date().toLocaleString('pt-BR');
+
+    const printWindow = window.open('', '_blank', 'width=950,height=750');
+    if (!printWindow) {
+      alert("Por favor, permita pop-ups para gerar o relatório PDF.");
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Relatorio_Lentes_Ruptura_NovaLab</title>
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 25px; color: #1e293b; background: #fff; }
+            .header { border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; }
+            .logo { font-size: 22px; font-weight: 800; color: #0f172a; }
+            .logo span { color: #0284c7; }
+            .subtitle { font-size: 12px; color: #64748b; margin-top: 3px; }
+            .meta { margin-bottom: 16px; font-size: 12px; background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1px solid #e2e8f0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            th { background: #0f172a; color: #fff; text-align: left; padding: 8px 10px; font-weight: 700; }
+            td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+            tr:nth-child(even) { background: #f8fafc; }
+            .status-rupture { color: #dc2626; font-weight: 800; }
+            .status-alert { color: #d97706; font-weight: 800; }
+            .footer { margin-top: 25px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+            @media print {
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="logo">NOVA <span>LAB</span></div>
+              <div class="subtitle">Laboratório Óptico & Controle de Inventário de Lentes Acabadas</div>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #64748b;">
+              <div>Data: <strong>${nowStr}</strong></div>
+              <div>Filtro: <strong>${modelName}</strong></div>
+            </div>
+          </div>
+
+          <h3 style="font-size: 16px; color: #0f172a; margin-bottom: 6px;">Relatório de Estoque Crítico / Ruptura (Grade de Lentes Acabadas)</h3>
+          <div class="meta">
+            Total de Dioptrias Listadas: <strong>${itemsToExport.length} células</strong> | Critério: <strong>Estoque &le; 2 unidades</strong>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Modelo de Lente / Marca</th>
+                <th>Tratamento</th>
+                <th>Esférico (SPH)</th>
+                <th>Cilíndrico (CYL)</th>
+                <th style="text-align: center;">Qtd Atual</th>
+                <th>Localização</th>
+                <th>Código de Barras</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsToExport.map((item, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td><strong>${item.lens_model?.name || item.brand || 'Lente Acabada'}</strong></td>
+                  <td>${item.lens_model?.treatment || 'Incolor'}</td>
+                  <td>${parseFloat(item.spherical) > 0 ? '+' : ''}${parseFloat(item.spherical).toFixed(2)}</td>
+                  <td>${parseFloat(item.cylindrical).toFixed(2)}</td>
+                  <td style="text-align: center;" class="${item.quantity_available === 0 ? 'status-rupture' : 'status-alert'}">
+                    ${item.quantity_available} un
+                  </td>
+                  <td>${item.location_tag || 'GAVETA-S/N'}</td>
+                  <td style="font-family: monospace;">${item.barcode || 'N/A'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            Documento gerado automaticamente pelo Sistema Nova LAB Ótica - Relatório de Inventário de Lentes Acabadas
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   return (
     <div className="glass-panel" style={{ width: '100%' }}>
       <div className="page-header" style={{ marginBottom: '24px', alignItems: 'center' }}>
@@ -263,6 +388,14 @@ const GradeOptica = ({ onOpenManualInsert }) => {
 
         
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginLeft: 'auto' }}>
+          <button 
+            className="btn btn-outline btn-sm" 
+            onClick={() => handleExportPDF()}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+          >
+            <FileText size={16} />
+            Exportar PDF
+          </button>
           <button 
             className="btn btn-primary btn-sm" 
             onClick={() => {
@@ -333,8 +466,8 @@ const GradeOptica = ({ onOpenManualInsert }) => {
             onChange={(e) => setFilterTreatment(e.target.value)}
             style={{ color: 'black' }}
           >
-            <option value="">Todos os Tratamentos ({Array.from(new Set([...models.map(m => m.treatment), ...gridData.map(i => i.lens_model?.treatment)].filter(Boolean))).length})</option>
-            {Array.from(new Set([...models.map(m => m.treatment), ...gridData.map(i => i.lens_model?.treatment)].filter(Boolean))).map((treat, idx) => (
+            <option value="">Todos os Tratamentos ({uniqueTreatments.length})</option>
+            {uniqueTreatments.map((treat, idx) => (
               <option key={idx} value={treat}>{treat}</option>
             ))}
           </select>
@@ -408,8 +541,8 @@ const GradeOptica = ({ onOpenManualInsert }) => {
                             </span>
                           )}
                           {cellItem && cellItem.isConsolidated && cellItem.quantity_available > 0 && (
-                            <span className="lens-loc" style={{ opacity: 0.8 }}>
-                              {Array.from(new Set(cellItem.items.filter(i => i.quantity_available > 0).map(i => i.location_tag).filter(Boolean))).join(', ') || 'Várias'}
+                            <span className="lens-loc" style={{ opacity: 0.9, fontWeight: 'bold' }}>
+                              {`${cellItem.items.length} Mod.`}
                             </span>
                           )}
                         </div>
@@ -753,7 +886,10 @@ const GradeOptica = ({ onOpenManualInsert }) => {
               </table>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' }}>
+              <button className="btn btn-primary" onClick={() => handleExportPDF(gridData.filter(i => (i.quantity_available || 0) <= 2))} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                <FileText size={16} /> Exportar Relatório em PDF
+              </button>
               <button className="btn btn-secondary" onClick={() => setShowRuptureAlertModal(false)}>
                 Fechar Alerta
               </button>

@@ -150,11 +150,12 @@ async def delete_lens_model(db: AsyncSession, model_id: uuid.UUID) -> bool:
 async def get_lens_model_by_attributes(
     db: AsyncSession, brand: str, material: str, refractive_index: Decimal, treatment: str, diameter: int
 ) -> Optional[LensModel]:
+    from sqlalchemy import func
     query = select(LensModel).where(
-        LensModel.brand == brand,
-        LensModel.material == material,
+        func.lower(LensModel.brand) == func.lower(brand.strip()),
+        func.lower(LensModel.material) == func.lower(material.strip()),
         LensModel.refractive_index == refractive_index,
-        LensModel.treatment == treatment,
+        func.lower(LensModel.treatment) == func.lower(treatment.strip()),
         LensModel.diameter == diameter
     )
     result = await db.execute(query)
