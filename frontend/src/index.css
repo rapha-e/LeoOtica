@@ -1423,10 +1423,9 @@ input[type=number] {
   /* 1. Oculta todos os elementos marcados como no-print */
   .no-print, .no-print * {
     display: none !important;
-    visibility: hidden !important;
   }
 
-  /* 2. Oculta com display:none todo o conteúdo de fundo para colapsar a altura do documento */
+  /* 2. Oculta os elementos da página de fundo para colapsar a altura do documento */
   body.printing-invoice-only .app-header,
   body.printing-invoice-only .smart-menu-bar,
   body.printing-invoice-only nav,
@@ -1440,7 +1439,7 @@ input[type=number] {
     display: none !important;
   }
 
-  /* 3. Colapsa margens, alturas e rolagens globais para evitar folhas extras em branco */
+  /* 3. Colapsa margens, alturas e rolagens globais */
   html, body {
     margin: 0 !important;
     padding: 0 !important;
@@ -1488,11 +1487,23 @@ input[type=number] {
     background: #ffffff !important;
     color: #000000 !important;
     box-sizing: border-box !important;
+    visibility: visible !important;
+    opacity: 1 !important;
     page-break-after: avoid !important;
     break-after: avoid !important;
   }
 
-  /* 5. Força cores legíveis em preto e bordas nítidas para papel/PDF */
+  /* 5. Força cores legíveis em PRETO e remove transparência/gradientes dos textos e elementos */
+  #invoice-print-area * {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    border-color: #cbd5e1 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
   #invoice-print-area h1,
   #invoice-print-area h2,
   #invoice-print-area h3,
@@ -1506,22 +1517,21 @@ input[type=number] {
   #invoice-print-area div,
   #invoice-print-area label {
     color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  #invoice-print-area table,
-  #invoice-print-area td,
-  #invoice-print-area th,
-  #invoice-print-area div {
-    border-color: #cbd5e1 !important;
-    background-color: transparent !important;
+  #invoice-print-area tr th,
+  #invoice-print-area table thead tr {
+    background-color: #f1f5f9 !important;
+    color: #000000 !important;
   }
 
   /* 6. Configuração de margens da página A4 */
   @page {
     size: A4 portrait;
-    margin: 12mm 12mm 12mm 12mm;
+    margin: 12mm;
   }
 }
 
