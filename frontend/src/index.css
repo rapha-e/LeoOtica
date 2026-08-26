@@ -1418,3 +1418,28 @@ input[type=number] {
   -moz-appearance: textfield;
 }
 
+/* Regras de Impressão Global (Oculta botões e elementos no-print) */
+@media print {
+  .no-print, .no-print * {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .modal-overlay {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+  }
+  .modal-content {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+}
+
+

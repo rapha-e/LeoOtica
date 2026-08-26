@@ -1373,6 +1373,18 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                   </div>
                 </div>
 
+                {/* Botão de Impressão (Visível na tela, Oculto na Impressão) */}
+                <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(224,230,240,0.8)' }}>
+                  <button 
+                    type="button"
+                    className="btn btn-primary no-print" 
+                    onClick={() => window.print()}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 22px', fontWeight: 800, borderRadius: '8px' }}
+                  >
+                    <Printer size={18} /> Imprimir Fatura
+                  </button>
+                </div>
+
               </div>
             ) : null}
 
