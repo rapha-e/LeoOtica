@@ -1418,7 +1418,7 @@ input[type=number] {
   -moz-appearance: textfield;
 }
 
-/* Regras de Impressão Global (Isolamento de Faturas e Documentos) */
+/* Regras de Impressão Global (Isolamento de Faturas e Eliminação de Páginas Extras) */
 @media print {
   /* 1. Oculta todos os elementos marcados como no-print */
   .no-print, .no-print * {
@@ -1426,34 +1426,70 @@ input[type=number] {
     visibility: hidden !important;
   }
 
-  /* 2. Quando o modal de fatura estiver ativo, oculta a visibilidade dos elementos de fundo */
-  body.printing-invoice-only *,
-  body:has(#invoice-print-area) * {
-    visibility: hidden !important;
+  /* 2. Oculta com display:none todo o conteúdo de fundo para colapsar a altura do documento */
+  body.printing-invoice-only .app-header,
+  body.printing-invoice-only .smart-menu-bar,
+  body.printing-invoice-only nav,
+  body.printing-invoice-only header,
+  body.printing-invoice-only .app-container > div:not(.modal-overlay),
+  body:has(#invoice-print-area) .app-header,
+  body:has(#invoice-print-area) .smart-menu-bar,
+  body:has(#invoice-print-area) nav,
+  body:has(#invoice-print-area) header,
+  body:has(#invoice-print-area) .app-container > div:not(.modal-overlay) {
+    display: none !important;
   }
 
-  /* 3. Torna visível exclusivamente o container da fatura e seus elementos internos */
-  body.printing-invoice-only #invoice-print-area,
-  body.printing-invoice-only #invoice-print-area *,
-  body:has(#invoice-print-area) #invoice-print-area,
-  body:has(#invoice-print-area) #invoice-print-area * {
-    visibility: visible !important;
+  /* 3. Colapsa margens, alturas e rolagens globais para evitar folhas extras em branco */
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 
-  /* 4. Posicionamento fixo do container da fatura no topo da folha */
-  body.printing-invoice-only #invoice-print-area,
-  body:has(#invoice-print-area) #invoice-print-area,
-  #invoice-print-area {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
+  .app-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  .modal-overlay, 
+  .modal-content {
+    position: static !important;
+    display: block !important;
+    float: none !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* 4. O container da fatura ajusta a altura estritamente ao seu conteúdo */
+  #invoice-print-area {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
     margin: 0 !important;
-    padding: 24px !important;
+    padding: 0 !important;
     background: #ffffff !important;
+    color: #000000 !important;
     box-sizing: border-box !important;
-    z-index: 999999 !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
 
   /* 5. Força cores legíveis em preto e bordas nítidas para papel/PDF */
@@ -1480,6 +1516,12 @@ input[type=number] {
   #invoice-print-area div {
     border-color: #cbd5e1 !important;
     background-color: transparent !important;
+  }
+
+  /* 6. Configuração de margens da página A4 */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 12mm 12mm 12mm;
   }
 }
 
