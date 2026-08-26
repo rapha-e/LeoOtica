@@ -1418,27 +1418,85 @@ input[type=number] {
   -moz-appearance: textfield;
 }
 
-/* Regras de Impressão Global (Oculta botões e elementos no-print) */
+/* Regras de Impressão Global (Oculta botões no-print e isola a Fatura na Impressão) */
 @media print {
+  /* 1. Oculta todos os elementos marcados como no-print */
   .no-print, .no-print * {
     display: none !important;
   }
-  body {
-    background: white !important;
-    color: black !important;
+
+  /* 2. Quando estiver imprimindo a fatura de fechamento */
+  body.printing-invoice-only,
+  body:has(#invoice-print-area) {
+    background: #ffffff !important;
+    color: #000000 !important;
   }
-  .modal-overlay {
-    position: static !important;
-    background: transparent !important;
+
+  /* Oculta os cabeçalhos, barras de navegação e o conteúdo da página atrás do modal */
+  body.printing-invoice-only .app-header,
+  body.printing-invoice-only .smart-menu-bar,
+  body.printing-invoice-only .app-container > *:not(.modal-overlay),
+  body.printing-invoice-only header,
+  body.printing-invoice-only nav,
+  body:has(#invoice-print-area) .app-header,
+  body:has(#invoice-print-area) .smart-menu-bar,
+  body:has(#invoice-print-area) .app-container > *:not(.modal-overlay),
+  body:has(#invoice-print-area) header,
+  body:has(#invoice-print-area) nav {
+    display: none !important;
+  }
+
+  /* Remove o fundo escuro, sombras e bordas do modal na impressão */
+  body.printing-invoice-only .modal-overlay,
+  body:has(#invoice-print-area) .modal-overlay {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: #ffffff !important;
     backdrop-filter: none !important;
     padding: 0 !important;
+    margin: 0 !important;
+    z-index: 99999 !important;
   }
-  .modal-content {
-    box-shadow: none !important;
+
+  body.printing-invoice-only .modal-content,
+  body:has(#invoice-print-area) .modal-content {
+    background: #ffffff !important;
     border: none !important;
+    box-shadow: none !important;
     max-width: 100% !important;
     width: 100% !important;
     padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Posiciona e formata a área da fatura para preenchimento total da folha */
+  #invoice-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    padding: 20px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Garante texto preto legível e bordas visíveis na folha impressa */
+  #invoice-print-area * {
+    color: #000000 !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  #invoice-print-area strong,
+  #invoice-print-area th,
+  #invoice-print-area td,
+  #invoice-print-area h2,
+  #invoice-print-area h4 {
+    color: #000000 !important;
+    font-weight: 800 !important;
   }
 }
 

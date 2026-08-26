@@ -336,6 +336,14 @@ const FechamentoFinanceiro = ({ laboratory }) => {
     }
   };
 
+  const handlePrintInvoice = () => {
+    document.body.classList.add('printing-invoice-only');
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-invoice-only');
+    }, 1000);
+  };
+
   const handleExportPdf = async () => {
     if (!invoiceDetail) return;
     setExportingPdf(true);
@@ -1378,7 +1386,7 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                   <button 
                     type="button"
                     className="btn btn-primary no-print" 
-                    onClick={() => window.print()}
+                    onClick={handlePrintInvoice}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 22px', fontWeight: 800, borderRadius: '8px' }}
                   >
                     <Printer size={18} /> Imprimir Fatura
