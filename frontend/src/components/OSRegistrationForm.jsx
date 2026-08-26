@@ -96,6 +96,17 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
   const [barcodeScanInput, setBarcodeScanInput] = useState('');
   const [scanLoading, setScanLoading] = useState(false);
 
+  // Modal de Confirmação Pós-Bipagem (Multifocal: OE/OD/Ambos | Visão Simples / Blocos: Unidade/Par)
+  const [bipConfirmModal, setBipConfirmModal] = useState({
+    open: false,
+    type: null, // 'MULTIFOCAL' ou 'VS_QUANTITY'
+    code: '',
+    modelName: '',
+    matrixTypeName: '',
+    item: null,
+    model: null
+  });
+
   const handleScanBarcode = async (e) => {
     if (e) e.preventDefault();
     const code = barcodeScanInput.trim();
@@ -109,9 +120,10 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
       const res = await api.get(`/inventory/by-barcode/${encodeURIComponent(code)}`);
       const item = res.data;
       if (item) {
+        let foundModel = null;
         if (item.lens_model_id) {
           setSelectedLensModelId(item.lens_model_id);
-          const foundModel = lensModels.find(m => m.id === item.lens_model_id) || item.lens_model;
+          foundModel = lensModels.find(m => m.id === item.lens_model_id) || item.lens_model;
           if (foundModel) {
             setSelectedLensModel(foundModel);
             if (foundModel.matrix_type) {
@@ -152,21 +164,118 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
           else setSelectedEyeTarget('OD_OE');
         }
 
-        setOcrSuccessMsg(`✨ Lente [${code}] bipada com sucesso! Modelo e prescrição preenchidos automaticamente. Avançando para Armação...`);
         setBarcodeScanInput('');
 
-        // Em caso de sucesso, pula a aba prescrição e vai direto para a aba Armação ('FRAME')
-        setTimeout(() => {
-          if (osType === 'PADRAO') {
-            setActiveStep('FRAME');
-          }
-        }, 700);
+        // Identificação precisa da Grade da Lente para a confirmação exigida
+        const mType = String(foundModel?.matrix_type || item?.lens_model?.matrix_type || item?.matrix_type || selectedMatrixFilter || '').toUpperCase();
+        const modelNameStr = String(foundModel?.name || item?.lens_model?.name || item?.model_name || '').toUpperCase();
+        const brandStr = String(foundModel?.brand || item?.lens_model?.brand || '').toUpperCase();
+
+        // 1. Multifocal Acabado ou Multifocal
+        const isMultifocalGrade = (
+          mType === 'MF_ACB' ||
+          mType === 'MF_BLOCO' ||
+          mType.includes('MF') ||
+          mType.includes('MULTIFOCAL') ||
+          modelNameStr.includes('MULTIFOCAL') ||
+          modelNameStr.includes('MF') ||
+          brandStr.includes('MULTIFOCAL')
+        );
+
+        // 2. Visão Simples LP, 1.67 Lentes Prontas ou Bloco Visão Simples
+        const isVSOrBlockGrade = !isMultifocalGrade && (
+          mType === 'LP_GRADE' ||
+          mType === 'GRADE_167' ||
+          mType === 'BLOCO_VS' ||
+          mType.includes('LP') ||
+          mType.includes('167') ||
+          mType.includes('BLOCO_VS') ||
+          modelNameStr.includes('VISÃO SIMPLES') ||
+          modelNameStr.includes('LP') ||
+          modelNameStr.includes('1.67') ||
+          modelNameStr.includes('BLOCO')
+        );
+
+        let matrixLabel = 'Grade da Lente';
+        if (mType === 'MF_ACB') matrixLabel = 'Multifocal Acabado';
+        else if (mType === 'MF_BLOCO') matrixLabel = 'Multifocal';
+        else if (mType === 'LP_GRADE') matrixLabel = 'Visão Simples LP';
+        else if (mType === 'GRADE_167') matrixLabel = '1.67 Lentes Prontas';
+        else if (mType === 'BLOCO_VS') matrixLabel = 'Bloco Visão Simples';
+        else if (isMultifocalGrade) matrixLabel = 'Multifocal';
+        else if (isVSOrBlockGrade) matrixLabel = 'Visão Simples / Bloco';
+
+        if (isMultifocalGrade) {
+          setBipConfirmModal({
+            open: true,
+            type: 'MULTIFOCAL',
+            code: code,
+            modelName: foundModel?.name || item?.lens_model?.name || 'Lente Multifocal',
+            matrixTypeName: matrixLabel,
+            item: item,
+            model: foundModel
+          });
+        } else if (isVSOrBlockGrade) {
+          setBipConfirmModal({
+            open: true,
+            type: 'VS_QUANTITY',
+            code: code,
+            modelName: foundModel?.name || item?.lens_model?.name || 'Lente Pronta / Bloco',
+            matrixTypeName: matrixLabel,
+            item: item,
+            model: foundModel
+          });
+        } else {
+          setOcrSuccessMsg(`✨ Lente [${code}] bipada com sucesso! Modelo e prescrição preenchidos automaticamente. Avançando para Armação...`);
+          setTimeout(() => {
+            if (osType === 'PADRAO') {
+              setActiveStep('FRAME');
+            }
+          }, 700);
+        }
       }
     } catch (err) {
       setOcrErrorMsg(err.response?.data?.detail || `Código de barras [${code}] não encontrado no estoque.`);
     } finally {
       setScanLoading(false);
     }
+  };
+
+  const handleConfirmBipSelection = (option) => {
+    const { type, code, matrixTypeName } = bipConfirmModal;
+
+    if (type === 'MULTIFOCAL') {
+      if (option === 'OE') {
+        setSelectedEyeTarget('OE');
+        setLensQuantity('1');
+        setOcrSuccessMsg(`✨ Lente [${code}] (${matrixTypeName}) confirmada: Somente Olho Esquerdo (OE) | 1 Unidade.`);
+      } else if (option === 'OD') {
+        setSelectedEyeTarget('OD');
+        setLensQuantity('1');
+        setOcrSuccessMsg(`✨ Lente [${code}] (${matrixTypeName}) confirmada: Somente Olho Direito (OD) | 1 Unidade.`);
+      } else {
+        setSelectedEyeTarget('OD_OE');
+        setLensQuantity('2');
+        setOcrSuccessMsg(`✨ Lente [${code}] (${matrixTypeName}) confirmada: Ambos os Olhos (OD + OE) | Par (2 Lentes).`);
+      }
+    } else if (type === 'VS_QUANTITY') {
+      if (option === '1') {
+        setLensQuantity('1');
+        setOcrSuccessMsg(`✨ Lente [${code}] (${matrixTypeName}) confirmada: Quantidade Unidade (1 Lente).`);
+      } else {
+        setLensQuantity('2');
+        setSelectedEyeTarget('OD_OE');
+        setOcrSuccessMsg(`✨ Lente [${code}] (${matrixTypeName}) confirmada: Quantidade Par (2 Lentes).`);
+      }
+    }
+
+    setBipConfirmModal({ open: false, type: null, code: '', modelName: '', matrixTypeName: '', item: null, model: null });
+
+    setTimeout(() => {
+      if (osType === 'PADRAO') {
+        setActiveStep('FRAME');
+      }
+    }, 500);
   };
 
   const handleOcrFileUpload = async (e) => {
@@ -1634,6 +1743,208 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
                 Ir para Bancada OS
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO PÓS-BIPAGEM (SOLICITADO PELO USUÁRIO) */}
+      {bipConfirmModal.open && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(24, 24, 37, 0.98), rgba(15, 23, 42, 0.99))',
+            border: `2px solid ${bipConfirmModal.type === 'MULTIFOCAL' ? 'rgba(168, 85, 247, 0.6)' : 'rgba(56, 189, 248, 0.6)'}`,
+            borderRadius: '20px',
+            padding: '28px',
+            maxWidth: '520px',
+            width: '100%',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.2)',
+            color: 'white',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: bipConfirmModal.type === 'MULTIFOCAL' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                border: `2px solid ${bipConfirmModal.type === 'MULTIFOCAL' ? '#c084fc' : '#38bdf8'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '6px'
+              }}>
+                {bipConfirmModal.type === 'MULTIFOCAL' ? (
+                  <Eye size={30} style={{ color: '#c084fc' }} />
+                ) : (
+                  <PackageCheck size={30} style={{ color: '#38bdf8' }} />
+                )}
+              </div>
+
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'white' }}>
+                {bipConfirmModal.type === 'MULTIFOCAL' ? 'Confirmação do Olho Solicitado' : 'Confirmação de Quantidade de Lentes'}
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>
+                Lente Bipada: <strong style={{ color: '#e2e8f0' }}>{bipConfirmModal.modelName}</strong> ({bipConfirmModal.matrixTypeName})
+              </p>
+              <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.1)', padding: '3px 10px', borderRadius: '12px', color: '#cbd5e1', fontWeight: 700 }}>
+                EAN: {bipConfirmModal.code}
+              </span>
+            </div>
+
+            {bipConfirmModal.type === 'MULTIFOCAL' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                <p style={{ fontSize: '0.9rem', color: '#e2e8f0', fontWeight: 600, margin: 0 }}>
+                  A grade da lente é <strong>{bipConfirmModal.matrixTypeName}</strong>. Por favor, confirme qual olho será produzido:
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => handleConfirmBipSelection('OE')}
+                    style={{
+                      background: 'rgba(168, 85, 247, 0.15)',
+                      border: '2px solid rgba(168, 85, 247, 0.5)',
+                      color: '#e9d5ff',
+                      padding: '14px 18px',
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      fontSize: '0.95rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    👁️ Somente Olho Esquerdo (OE) — 1 Lente
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => handleConfirmBipSelection('OD')}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '2px solid rgba(56, 189, 248, 0.5)',
+                      color: '#bae6fd',
+                      padding: '14px 18px',
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      fontSize: '0.95rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    👁️ Somente Olho Direito (OD) — 1 Lente
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => handleConfirmBipSelection('AMBOS')}
+                    style={{
+                      background: 'linear-gradient(135deg, #0284c7, #7e22ce)',
+                      border: 'none',
+                      color: 'white',
+                      padding: '14px 18px',
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      fontSize: '0.95rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(126, 34, 206, 0.4)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    👓 Ambos os Olhos (OD + OE) — Par Completo (2 Lentes)
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                <p style={{ fontSize: '0.9rem', color: '#e2e8f0', fontWeight: 600, margin: 0 }}>
+                  A grade da lente é <strong>{bipConfirmModal.matrixTypeName}</strong>. Por favor, confirme a quantidade solicitada:
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => handleConfirmBipSelection('1')}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '2px solid rgba(56, 189, 248, 0.5)',
+                      color: '#bae6fd',
+                      padding: '16px',
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      fontSize: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <PackageCheck size={24} />
+                    <span>Unidade (1 Lente)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => handleConfirmBipSelection('2')}
+                    style={{
+                      background: 'linear-gradient(135deg, #0284c7, #0d9488)',
+                      border: 'none',
+                      color: 'white',
+                      padding: '16px',
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      fontSize: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(2, 132, 199, 0.4)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <Eye size={24} />
+                    <span>Par (2 Lentes)</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
