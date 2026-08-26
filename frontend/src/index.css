@@ -1425,17 +1425,17 @@ input[type=number] {
     display: none !important;
   }
 
-  /* 2. Oculta os elementos da página de fundo para colapsar a altura do documento */
+  /* 2. Oculta os elementos da página de fundo (cabeçalho da app, menus e abas do fechamento) */
   body.printing-invoice-only .app-header,
   body.printing-invoice-only .smart-menu-bar,
   body.printing-invoice-only nav,
   body.printing-invoice-only header,
-  body.printing-invoice-only .app-container > div:not(.modal-overlay),
+  body.printing-invoice-only .fechamento-container > div:not(.modal-overlay),
   body:has(#invoice-print-area) .app-header,
   body:has(#invoice-print-area) .smart-menu-bar,
   body:has(#invoice-print-area) nav,
   body:has(#invoice-print-area) header,
-  body:has(#invoice-print-area) .app-container > div:not(.modal-overlay) {
+  body:has(#invoice-print-area) .fechamento-container > div:not(.modal-overlay) {
     display: none !important;
   }
 
@@ -1451,7 +1451,7 @@ input[type=number] {
     color: #000000 !important;
   }
 
-  .app-container {
+  .app-container, .fechamento-container {
     padding: 0 !important;
     margin: 0 !important;
     height: auto !important;

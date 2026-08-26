@@ -450,7 +450,7 @@ const FechamentoFinanceiro = ({ laboratory }) => {
   });
 
   return (
-    <div className="app-container" style={{ paddingBottom: '80px' }}>
+    <div className="fechamento-container app-container" style={{ paddingBottom: '80px' }}>
       
       {/* Toast Alert */}
       {toast && (
