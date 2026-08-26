@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Any
 import jwt
 import bcrypt
@@ -38,9 +38,9 @@ def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None)
     Gera um token JWT com o subject (geralmente o ID ou email do usuário).
     """
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode = {"exp": expire, "sub": str(subject)}
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -54,7 +54,7 @@ def decode_access_token(token: str) -> Optional[dict]:
     try:
         decoded_token = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         # Verifica se o token expirou
-        if decoded_token["exp"] < datetime.utcnow().timestamp():
+        if decoded_token["exp"] < datetime.now(timezone.utc).timestamp():
             return None
         return decoded_token
     except jwt.PyJWTError:

@@ -324,11 +324,58 @@ p {
   background: rgba(255, 255, 255, 0.6);
 }
 
+.grid-container.no-scroll {
+  overflow: hidden !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
 .optical-grid {
   border-collapse: collapse;
   width: 100%;
   text-align: center;
   min-width: 800px;
+}
+
+/* Tabela ultra-compacta perfeitamente enquadrada sem rolagem */
+.optical-grid.fit-grid-table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+  text-align: center !important;
+  min-width: 0 !important;
+}
+
+.optical-grid.fit-grid-table th,
+.optical-grid.fit-grid-table td {
+  padding: 3px 1px !important;
+  font-size: 0.74rem !important;
+  border: 1px solid rgba(224, 230, 240, 0.5) !important;
+  box-sizing: border-box !important;
+}
+
+.optical-grid.fit-grid-table .lens-cell {
+  min-width: 0 !important;
+  width: auto !important;
+  height: 38px !important;
+  padding: 1px 1px !important;
+}
+
+.optical-grid.fit-grid-table .lens-qty {
+  font-size: 0.85rem !important;
+  font-weight: 800 !important;
+  line-height: 1.1 !important;
+}
+
+.optical-grid.fit-grid-table .lens-loc {
+  font-size: 0.55rem !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  display: block !important;
+  margin-top: 1px !important;
 }
 
 .optical-grid th, .optical-grid td {
@@ -455,12 +502,21 @@ p {
   background: hsl(var(--danger) / 0.2);
 }
 
-.lens-cell.alert {
+.lens-cell.critical {
+  background: hsl(var(--danger) / 0.18);
+  border: 1px solid hsl(var(--danger) / 0.4);
+  color: hsl(var(--danger));
+}
+.lens-cell.critical:hover {
+  background: hsl(var(--danger) / 0.28);
+}
+
+.lens-cell.low, .lens-cell.alert {
   background: hsl(var(--warning) / 0.12);
   border: 1px solid hsl(var(--warning) / 0.3);
   color: hsl(var(--warning));
 }
-.lens-cell.alert:hover {
+.lens-cell.low:hover, .lens-cell.alert:hover {
   background: hsl(var(--warning) / 0.2);
 }
 
@@ -610,10 +666,12 @@ h1, h2, h3, h4, h5, h6, p, label, strong, span, li, td, th, input, select, texta
 }
 
 /* Mantém as cores de feedback/status com contraste legível */
-.lens-cell.rupture, .lens-cell.rupture * {
+.lens-cell.rupture, .lens-cell.rupture *,
+.lens-cell.critical, .lens-cell.critical * {
   color: hsl(var(--danger)) !important;
 }
-.lens-cell.alert, .lens-cell.alert * {
+.lens-cell.alert, .lens-cell.alert *,
+.lens-cell.low, .lens-cell.low * {
   color: hsl(var(--warning)) !important;
 }
 .lens-cell.normal, .lens-cell.normal * {
@@ -1349,3 +1407,14 @@ select.form-control option, select option {
 .crm-interaction-date { color: hsl(var(--text-muted)); margin-left: auto; }
 .crm-interaction-body { font-size: 0.85rem; color: hsl(var(--text-primary)); margin: 0; }
 .crm-loading, .crm-empty { padding: 40px; text-align: center; color: hsl(var(--text-muted)); font-size: 0.9rem; }
+
+/* Remover setas de incremento/decremento dos campos numéricos */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
+

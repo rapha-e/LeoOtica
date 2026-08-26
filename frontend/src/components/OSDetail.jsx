@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { OSService } from '../services/api';
-import { Clock, User, MapPin, ClipboardList, Info, AlertTriangle, Eye, Shield, Activity } from 'lucide-react';
+import { Clock, User, MapPin, ClipboardList, Info, AlertTriangle, Eye, Shield, FileText, Activity } from 'lucide-react';
 
 const OSDetail = ({ osId, onClose }) => {
   const [os, setOs] = useState(null);
@@ -47,19 +47,29 @@ const OSDetail = ({ osId, onClose }) => {
   }
 
   const formatCurrency = (val) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+    const num = parseFloat(val);
+    if (isNaN(num)) return 'R$ 0,00';
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
   };
 
   const formatDateTime = (dateStr) => {
     if (!dateStr) return '';
-    const date = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
-    return date.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    try {
+      const str = typeof dateStr === 'string' 
+        ? (dateStr.endsWith('Z') ? dateStr : dateStr + 'Z') 
+        : String(dateStr);
+      const date = new Date(str);
+      if (isNaN(date.getTime())) return String(dateStr);
+      return date.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return String(dateStr || '');
+    }
   };
 
   // Lógica de cálculo geométrico para o desenho técnico SVG (OD/OE)
@@ -204,9 +214,9 @@ const OSDetail = ({ osId, onClose }) => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
       {/* Header com botões */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-glass)', paddingBottom: '15px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-glass)', paddingBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
         <div>
-          <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))', display: 'block' }}>DETALHES E RASTREABILIDADE</span>
+          <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))', display: 'block' }}>DETALHES E RASTREABILIDADE FABRIL</span>
           <h2 style={{ fontSize: '1.5rem', color: 'white', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Activity size={22} style={{ color: 'hsl(var(--primary))' }} /> OS {os.os_number}
             {os.is_rework && (
@@ -227,18 +237,20 @@ const OSDetail = ({ osId, onClose }) => {
             )}
           </h2>
         </div>
-        {onClose && (
-          <button onClick={onClose} className="btn btn-secondary" style={{ padding: '8px 16px', fontWeight: 700 }}>
-            Voltar ao Kanban
-          </button>
-        )}
+
+        {/* Botão de Voltar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {onClose && (
+            <button onClick={onClose} className="btn btn-secondary" style={{ padding: '8px 16px', fontWeight: 700 }}>
+              Voltar
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Grid Split Screen */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
-        
-        {/* LADO ESQUERDO: Dados técnicos da OS e Esquema de Descentração */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* LADO ESQUERDO: Dados técnicos da OS e Esquema de Descentração */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           {/* Ficha de Receita Visual e Dados da Armação */}
           <div className="glass-panel" style={{ padding: '20px' }}>
@@ -249,12 +261,13 @@ const OSDetail = ({ osId, onClose }) => {
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
               <div>
-                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Paciente: <strong style={{ color: 'white' }}>{os.client_name || 'N/A'}</strong></p>
-                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Médico: <strong style={{ color: 'white' }}>{os.doctor_name || 'N/A'}</strong></p>
+                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Número da OS: <strong style={{ color: 'white' }}>{os.os_number || 'N/A'}</strong></p>
+                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Pedido da Loja: <strong style={{ color: '#38bdf8' }}>{os.client_order_number || 'N/A'}</strong></p>
+                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Bandeja (Tray ID): <strong style={{ color: '#eab308' }}>{os.tray_number || 'N/A'}</strong></p>
               </div>
               <div>
-                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Ótica Parceira: <strong style={{ color: 'white' }}>{os.partner_shop?.trade_name || 'N/A'}</strong></p>
-                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Faturamento Comercial: <strong style={{ color: 'white' }}>{os.optical_store?.fantasy_name || 'N/A'}</strong></p>
+                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Ótica Cliente: <strong style={{ color: 'white' }}>{os.optical_store?.trade_name || os.optical_store?.corporate_name || os.partner_shop?.trade_name || 'N/A'}</strong></p>
+                <p style={{ margin: '4px 0', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Prioridade: <strong style={{ color: os.priority === 'URGENTE' ? '#ef4444' : 'white' }}>{os.priority || 'NORMAL'}</strong></p>
               </div>
             </div>
 
@@ -315,28 +328,36 @@ const OSDetail = ({ osId, onClose }) => {
               <h5 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#3b82f6', marginBottom: '10px' }}>Especificações da Lente & Serviços Acrescentados</h5>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
                 <div>Tipo de OS: <strong style={{ color: 'white' }}>{os.os_type === 'REPARO_SERVICO' ? 'Reparo / Serviço Técnico' : 'Padrão (Com Lentes)'}</strong></div>
-                <div>Marca / Modelo: <strong style={{ color: 'white' }}>{os.items?.find(i => i.entity_type === 'product')?.name || 'Essilor Crizal Easy 1.56'}</strong></div>
-                <div>Tratamento: <strong style={{ color: 'white' }}>{os.items?.find(i => i.entity_type === 'treatment')?.name || 'Antirreflexo Crizal Easy'}</strong></div>
+                <div>Marca / Modelo: <strong style={{ color: 'white' }}>{(os.items || []).find(i => i && i.entity_type === 'product')?.name || 'Essilor Crizal Easy 1.56'}</strong></div>
+                <div>Tratamento: <strong style={{ color: 'white' }}>{(os.items || []).find(i => i && i.entity_type === 'treatment')?.name || 'Antirreflexo Crizal Easy'}</strong></div>
                 <div>Total da OS: <strong style={{ color: '#10b981' }}>{formatCurrency(os.total_amount || 0)}</strong></div>
               </div>
 
-              {os.items && os.items.length > 0 && (
+              {(os.items || []).filter(Boolean).length > 0 && (
                 <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', marginTop: '8px' }}>
                   <thead>
                     <tr style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8', textAlign: 'left' }}>
                       <th style={{ padding: '6px' }}>Item / Serviço</th>
+                      <th style={{ padding: '6px' }}>Descrição do Catálogo</th>
                       <th style={{ padding: '6px' }}>Tipo</th>
                       <th style={{ padding: '6px' }}>Qtd</th>
                       <th style={{ padding: '6px' }}>Valor</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {os.items.map(item => (
-                      <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                        <td style={{ padding: '6px', color: '#fff' }}>{item.name || item.entity_type}</td>
-                        <td style={{ padding: '6px', color: '#94a3b8' }}>{item.entity_type}</td>
+                    {(os.items || []).filter(Boolean).map((item, idx) => (
+                      <tr key={item.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                        <td style={{ padding: '6px', color: '#fff', fontWeight: 700 }}>
+                          {item.name || (item.entity_type === 'product' ? 'Produto / Lente' : item.entity_type === 'treatment' ? 'Tratamento' : 'Serviço Técnico')}
+                        </td>
+                        <td style={{ padding: '6px', color: '#cbd5e1' }}>
+                          {item.description || item.name || 'Sem descrição cadastrada'}
+                        </td>
+                        <td style={{ padding: '6px', color: '#94a3b8' }}>
+                          {item.entity_type === 'product' ? 'Produto' : item.entity_type === 'treatment' ? 'Tratamento' : 'Serviço'}
+                        </td>
                         <td style={{ padding: '6px', color: '#fff' }}>{item.quantity}</td>
-                        <td style={{ padding: '6px', color: '#10b981', fontWeight: 600 }}>{formatCurrency(item.price || 0)}</td>
+                        <td style={{ padding: '6px', color: '#10b981', fontWeight: 600 }}>{formatCurrency(item.unit_price || item.price || 0)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -449,10 +470,59 @@ const OSDetail = ({ osId, onClose }) => {
             </div>
           )}
         </div>
-
       </div>
     </div>
   );
 };
 
-export default OSDetail;
+class OSDetailErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("OSDetail Error Boundary capturou um erro:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="glass-panel" style={{ padding: '20px', textAlign: 'center', color: '#ef4444' }}>
+          <h4 style={{ color: '#ef4444', margin: '0 0 8px 0' }}>⚠️ Erro ao exibir detalhes da Ordem de Serviço</h4>
+          <p style={{ fontSize: '0.85rem', color: 'white', marginBottom: '8px' }}>
+            Ocorreu uma falha ao processar os detalhes desta OS.
+          </p>
+          <div style={{ margin: '10px 0', padding: '10px 14px', background: 'rgba(0,0,0,0.5)', color: '#fca5a5', fontSize: '0.78rem', fontFamily: 'monospace', textAlign: 'left', borderRadius: '6px', whiteSpace: 'pre-wrap', maxHeight: '160px', overflowY: 'auto' }}>
+            <strong>Detalhe do Erro JS:</strong> {this.state.error?.message || String(this.state.error)}
+            {this.state.error?.stack && (
+              <div style={{ marginTop: '6px', opacity: 0.8, fontSize: '0.72rem' }}>
+                {this.state.error.stack}
+              </div>
+            )}
+          </div>
+          <button 
+            className="btn btn-secondary btn-sm" 
+            onClick={() => this.props.onClose?.()}
+            style={{ marginTop: '10px' }}
+          >
+            Fechar Detalhes
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function OSDetailWithBoundary(props) {
+  return (
+    <OSDetailErrorBoundary onClose={props.onClose}>
+      <OSDetail {...props} />
+    </OSDetailErrorBoundary>
+  );
+}

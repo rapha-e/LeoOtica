@@ -65,6 +65,8 @@ export const LensService = {
   getModel: (id) => api.get(`/lens-models/${id}`),
   updateModel: (id, data) => api.put(`/lens-models/${id}`, data),
   deleteModel: (id) => api.delete(`/lens-models/${id}`),
+  getPresets: () => api.get('/lens-models/presets'),
+  saveDegreePolicy: (data) => api.post('/degree-policy/range', data),
 };
 
 export const BlockService = {
@@ -78,28 +80,33 @@ export const BlockService = {
 };
 
 export const InventoryService = {
-  getGrid: (modelId) => {
-    const url = modelId ? `/inventory/grid?lens_model_id=${modelId}` : '/inventory/grid';
+  getGrid: (modelId, matrixType) => {
+    const params = new URLSearchParams();
+    if (modelId) params.append('lens_model_id', modelId);
+    if (matrixType) params.append('matrix_type', matrixType);
+    const queryString = params.toString();
+    const url = queryString ? `/inventory/grid?${queryString}` : '/inventory/grid';
     return api.get(url);
   },
-  scan: (barcode) => api.post('/inventory/scan', { barcode }),
+  scan: (data, quantity = 1) => {
+    let payload = {};
+    if (typeof data === 'string') {
+      const q = parseInt(quantity, 10) || 1;
+      payload = { barcode: data, quantity: q, quantity_available: q };
+    } else if (typeof data === 'object' && data !== null) {
+      const q = parseInt(data.quantity || data.quantity_available || quantity, 10) || 1;
+      payload = { ...data, quantity: q, quantity_available: q };
+    } else {
+      payload = { barcode: String(data), quantity: 1, quantity_available: 1 };
+    }
+    return api.post('/inventory/scan', payload);
+  },
   registerFallback: (data) => api.post('/inventory/register-fallback', data),
   update: (id, data) => api.put(`/inventory/${id}`, data),
+  deleteItem: (id) => api.delete(`/inventory/${id}`),
 };
 
-export const OrderService = {
-  list: (status = '', storeId = '', search = '') => {
-    let url = '/orders/?';
-    if (status) url += `status=${status}&`;
-    if (storeId) url += `optical_store_id=${storeId}&`;
-    if (search) url += `search=${encodeURIComponent(search)}&`;
-    return api.get(url);
-  },
-  getById: (id) => api.get(`/orders/${id}`),
-  create: (data) => api.post('/orders/', data),
-  approveFinancial: (id) => api.post(`/orders/${id}/approve-financial`),
-  bill: (id) => api.post(`/orders/${id}/bill`),
-};
+
 
 
 
@@ -342,6 +349,11 @@ export const CRMService = {
   listDocuments: (storeId) => api.get(`/crm/stores/${storeId}/documents`),
   deleteDocument: (storeId, docId) => api.delete(`/crm/stores/${storeId}/documents/${docId}`),
   getRankingAndEvolution: () => api.get('/crm/ranking-evolution'),
+};
+
+export const DegreePolicyService = {
+  getPolicy: () => api.get('/degree-policy/'),
+  savePolicy: (policyData, cascadeUpdate = false) => api.post(`/degree-policy/?cascade_update=${cascadeUpdate}`, policyData),
 };
 
 export default api;

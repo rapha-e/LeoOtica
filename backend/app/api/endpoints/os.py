@@ -10,6 +10,8 @@ from backend.app.schemas.os import (
     ServiceOrderResponse, ServiceOrderCreate, ServiceOrderUpdate, OSCancelRequest, AllocateRequest, StatusUpdateRequest, ReprocessRequest,
     ServiceOrderItemCreate, ServiceOrderItemResponse, CQInspectionCreate
 )
+from backend.app.schemas.os_factory import OSCreateFactorySchema
+from backend.app.services.os_factory_service import OSFactoryService
 from backend.app.crud import os as crud_os
 from backend.app.services.ai_ocr import analyze_recipe_image
 from decimal import Decimal
@@ -17,6 +19,39 @@ from backend.app.models.os import OSStatus
 from backend.app.models.partner import PartnerShop
 
 router = APIRouter()
+
+@router.post("/factory/register", status_code=status.HTTP_201_CREATED)
+async def register_factory_service_order(
+    schema: OSCreateFactorySchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_operator)
+):
+    """
+    Registra uma nova Ordem de Serviço na esteira fabril com:
+    - Validação de regras clínicas e geométricas
+    - Transposição automática de grau
+    - Verificação de crédito da ótica
+    - Baixa atômica de saldo na matriz correspondente
+    - Precificação dinâmica por faixa de grau
+    - Definição automática da rota de produção (Expressa vs CNC)
+    """
+    created_os = await OSFactoryService.register_factory_os(
+        db=db,
+        schema=schema,
+        current_user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "Ordem de serviço registrada e processada com sucesso.",
+        "data": {
+            "os_id": created_os.id,
+            "os_number": created_os.os_number,
+            "status": created_os.status,
+            "total_price": float(created_os.total_amount),
+            "tray_number": created_os.tray_number
+        }
+    }
 
 @router.post("/", response_model=ServiceOrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_service_order_endpoint(
@@ -46,16 +81,6 @@ async def upload_receita_ocr(
             detail="Formato de arquivo inválido. Envie uma imagem (PNG, JPG, JPEG)."
         )
 
-@router.get("/financial-blocked", response_model=List[ServiceOrderResponse])
-async def list_financial_blocked_orders_endpoint(
-    current_user: User = Depends(get_current_active_operator),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Retorna a fila administrativa de Ordens de Serviço bloqueadas por restrição financeira.
-    """
-    return await crud_os.get_financial_blocked_orders(db)
-        
     try:
         content = await file.read()
         extracted_data = await analyze_recipe_image(file.filename, content)
@@ -64,7 +89,7 @@ async def list_financial_blocked_orders_endpoint(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Erro ao processar imagem da receita: {str(e)}"
         )
-        
+
     partner_shop_id = None
     shop_name = extracted_data.get("shop_name")
     if shop_name:
@@ -96,8 +121,19 @@ async def list_financial_blocked_orders_endpoint(
         oe_addition=Decimal(str(extracted_data.get("oe_addition", 0.0))) if extracted_data.get("oe_addition") is not None else None,
         oe_dnp=Decimal(str(extracted_data.get("oe_dnp", 0.0))) if extracted_data.get("oe_dnp") else None
     )
-    
+
     return await crud_os.create_service_order(db, os_in)
+
+
+@router.get("/financial-blocked", response_model=List[ServiceOrderResponse])
+async def list_financial_blocked_orders_endpoint(
+    current_user: User = Depends(get_current_active_operator),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna a fila administrativa de Ordens de Serviço bloqueadas por restrição financeira.
+    """
+    return await crud_os.get_financial_blocked_orders(db)
 
 @router.post("/{os_id}/allocate", response_model=ServiceOrderResponse)
 async def allocate_os_lenses(
@@ -135,10 +171,10 @@ async def update_status(
     status_map = {
         "Recebida": OSStatus.RECEBIDA,
         "Separação": OSStatus.SEPARACAO,
-        "Produção": OSStatus.SURFACAGEM,
+        "Produção": OSStatus.PRODUCAO,
         "Surfaçagem": OSStatus.SURFACAGEM,
         "Montagem": OSStatus.MONTAGEM,
-        "CQ": OSStatus.CQ_FINAL,
+        "CQ": OSStatus.CQ,
         "CQ Final": OSStatus.CQ_FINAL,
         "Expedição": OSStatus.EXPEDICAO,
         "Concluída": OSStatus.CONCLUIDA,
@@ -349,7 +385,6 @@ async def update_service_order_endpoint(
         )
 
 @router.post("/{os_id}/authorize-financial", response_model=ServiceOrderResponse)
-
 async def authorize_financial_blocked_order_endpoint(
     os_id: uuid.UUID,
     payload: Optional[dict] = None,
@@ -359,6 +394,14 @@ async def authorize_financial_blocked_order_endpoint(
     """
     Libera administrativamente uma OS bloqueada por inadimplência (Exclusivo Administrador).
     """
+    # Validação de perfil: apenas Administradores podem liberar OS financeiramente bloqueadas
+    user_role = getattr(current_user, "role", None)
+    if user_role not in ("Administrador", "admin", "ADMIN"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas Administradores podem liberar Ordens de Serviço bloqueadas por inadimplência."
+        )
+
     notes = payload.get("notes") if payload else "Liberação de crédito efetuada pelo Administrador."
     res = await crud_os.authorize_financial_blocked_os(db, os_id, current_user.id, notes)
     if not res:

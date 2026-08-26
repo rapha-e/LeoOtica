@@ -145,3 +145,14 @@ async def get_overdue_alerts_endpoint(
         "due_in_7_days_count": len(due_in_7_days),
         "overdue_items": overdue_items[:10]
     }
+
+@router.get("/dre")
+async def get_consolidated_dre_endpoint(
+    current_user: User = Depends(get_current_active_operator),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna a Demonstração do Resultado do Exercício (DRE Consolidado).
+    Calcula: Faturamento Bruto - CMV Real - Despesas Operacionais - Folha = Lucro Líquido.
+    """
+    return await crud_financial_corp.get_consolidated_dre(db)

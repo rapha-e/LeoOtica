@@ -3,7 +3,7 @@ from decimal import Decimal
 import sys
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select
 
@@ -149,7 +149,7 @@ class TestOSBillingAndStatus(unittest.IsolatedAsyncioTestCase):
                 name="Tabela Contratual 20%",
                 optical_store_id=self.store.id,
                 discount_percent=Decimal("20.00"),
-                start_date=datetime.utcnow() - timedelta(hours=1),
+                start_date=datetime.now(timezone.utc) - timedelta(hours=1),
                 is_active=True
             )
             session.add(table)

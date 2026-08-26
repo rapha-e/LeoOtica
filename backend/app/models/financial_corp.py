@@ -65,3 +65,22 @@ class AccountsReceivable(Base):
 
     optical_store: Mapped["OpticalStore"] = relationship("OpticalStore")
     billing_cycle: Mapped[Optional["BillingCycle"]] = relationship("BillingCycle")
+
+
+class FinancialTransaction(Base):
+    __tablename__ = "financial_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    type: Mapped[str] = mapped_column(String(20), nullable=False) # 'RECEITA', 'DESPESA'
+    category: Mapped[str] = mapped_column(String(100), default="OUTROS", nullable=False) # 'FOLHA', 'FORNECEDOR', 'OPERACIONAL', 'FATURAMENTO', 'OUTROS'
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    transaction_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    
+    accounts_payable_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("accounts_payable.id", ondelete="SET NULL"), nullable=True, index=True)
+    accounts_receivable_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("accounts_receivable.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    accounts_payable: Mapped[Optional["AccountsPayable"]] = relationship("AccountsPayable")
+    accounts_receivable: Mapped[Optional["AccountsReceivable"]] = relationship("AccountsReceivable")
+

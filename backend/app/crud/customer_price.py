@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -190,7 +190,7 @@ async def calculate_customer_price(
         raise ValueError("Tipo de entidade do catálogo inválido.")
 
     # 2. Localiza tabela de preços ativa e vigente para a ótica na data/hora atuais
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     table_query = (
         select(CustomerPriceTable)
         .where(

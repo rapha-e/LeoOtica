@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BlockService } from '../services/api';
+import { LensService, BlockService, InventoryService } from '../services/api';
 import { Layers, Plus, Save, Edit, RefreshCw, X, ShieldAlert, Eye, EyeOff, Box, MapPin, Check, FileText } from 'lucide-react';
 
 const GradeBlocos = () => {
@@ -25,8 +25,9 @@ const GradeBlocos = () => {
     cost_price: 35.00,
     sale_price: 95.00,
     is_active: true,
-    base_curves_config: '2.00, 4.00, 6.00, 8.00',
-    additions_config: '0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00'
+    base_curves_config: '2.00, 4.00, 6.00',
+    additions_config: '1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25',
+    initial_quantity: 0
   });
   const [creatingModel, setCreatingModel] = useState(false);
 
@@ -48,11 +49,21 @@ const GradeBlocos = () => {
 
   const loadModels = async () => {
     try {
-      const response = await BlockService.getModels();
-      setModels(response.data);
-      if (response.data.length > 0 && !selectedModelId) {
-        setSelectedModelId(response.data[0].id);
-      }
+      const [blockRes, lensRes] = await Promise.all([
+        BlockService.getModels().catch(() => ({ data: [] })),
+        LensService.getModels().catch(() => ({ data: [] }))
+      ]);
+      const blockModels = (blockRes.data || []);
+      const lensBlockModels = (lensRes.data || []).filter(
+        m => m.matrix_type === 'MF_BLOCO'
+      );
+
+      const combinedMap = new Map();
+      [...blockModels, ...lensBlockModels].forEach(m => combinedMap.set(m.id, m));
+      const combined = Array.from(combinedMap.values());
+
+      setModels(combined);
+      setSelectedModelId('');
     } catch (err) {
       console.error("Erro ao carregar modelos de blocos:", err);
     }
@@ -61,64 +72,76 @@ const GradeBlocos = () => {
   const loadMatrix = async (modelId) => {
     setLoading(true);
     try {
-      if (modelId) {
-        const response = await BlockService.getGrid(modelId);
-        setMatrixData(response.data);
-      } else {
-        // Busca todos os modelos e consolida a matriz
-        const modelsRes = await BlockService.getModels();
-        const allModels = modelsRes.data;
-        
-        let consolidatedMap = {};
-        const targetBases = [2.00, 4.00, 6.00];
-        const targetAdds = [0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25];
+      const [blockRes, invRes] = await Promise.all([
+        BlockService.getGrid(modelId || null).catch(() => ({ data: { items_map: {} } })),
+        InventoryService.getGrid(modelId || null).catch(() => ({ data: [] }))
+      ]);
 
-        for (const m of allModels) {
-          try {
-            const gridRes = await BlockService.getGrid(m.id);
-            const map = gridRes.data.items_map || {};
+      let consolidatedMap = {};
+      const blockMap = blockRes.data?.items_map || {};
 
-            Object.keys(map).forEach(k => {
-              if (!consolidatedMap[k]) {
-                consolidatedMap[k] = {
-                  base_curve: map[k].base_curve,
-                  addition: map[k].addition,
-                  eye_side: map[k].eye_side || 'AMBOS',
-                  quantity_available: 0,
-                  location_tag: '',
-                  items: []
-                };
-              }
-              consolidatedMap[k].quantity_available += (map[k].quantity_available || 0);
-              
-              const itemWithModel = {
-                ...map[k],
-                block_model: m,
-                brand: m.brand,
-                name: m.name,
-                material: m.material,
-                refractive_index: m.refractive_index
-              };
-              consolidatedMap[k].items.push(itemWithModel);
-            });
-          } catch (e) {
-            console.error("Erro ao buscar modelo:", m.id, e);
-          }
+      Object.keys(blockMap).forEach(k => {
+        consolidatedMap[k] = blockMap[k];
+      });
+
+      const invItems = (invRes.data || []).filter(item => 
+        item.lens_model?.matrix_type === 'MF_BLOCO'
+      );
+
+      invItems.forEach(item => {
+        if (modelId && String(item.lens_model_id || item.lens_model?.id) !== String(modelId)) return;
+
+        const baseVal = parseFloat(item.base_curve || 0).toFixed(2);
+        const addVal = parseFloat(item.addition || 0).toFixed(2);
+        const key = `${baseVal}_${addVal}`;
+
+        if (!consolidatedMap[key]) {
+          consolidatedMap[key] = {
+            base_curve: parseFloat(baseVal),
+            addition: parseFloat(addVal),
+            eye_side: item.eye || 'OD',
+            quantity_available: 0,
+            location_tag: '',
+            items: []
+          };
         }
 
-        Object.keys(consolidatedMap).forEach(k => {
-          const item = consolidatedMap[k];
-          item.isConsolidated = true;
-          item.location_tag = `${item.items.length} Mod.`;
-        });
+        consolidatedMap[key].quantity_available += (item.quantity_available || 0);
 
-        setMatrixData({
-          model: { id: '', brand: 'Todos', name: 'Todos os Modelos', material: '', refractive_index: 0 },
-          base_curves: targetBases,
-          additions: targetAdds,
-          items_map: consolidatedMap
-        });
-      }
+        const subItem = {
+          ...item,
+          id: item.id,
+          brand: item.lens_model?.brand || item.brand || 'Marca Própria',
+          name: item.lens_model?.name || item.name || '',
+          material: item.lens_model?.material || 'Resina',
+          treatment: item.lens_model?.treatment || 'Incolor',
+          production_route: item.lens_model?.production_route || 'SURFACAGEM_CNC',
+          refractive_index: item.lens_model?.refractive_index || 1.56,
+          quantity_available: item.quantity_available || 0,
+          location_tag: item.location_tag || '',
+          barcode: item.barcode || ''
+        };
+
+        if (!consolidatedMap[key].items.some(i => i.id === item.id)) {
+          consolidatedMap[key].items.push(subItem);
+        }
+      });
+
+      Object.keys(consolidatedMap).forEach(k => {
+        const item = consolidatedMap[k];
+        item.isConsolidated = true;
+        item.location_tag = item.items.length > 0 ? `${item.items.length} Mod.` : '';
+      });
+
+      const targetBases = [2.00, 4.00, 6.00];
+      const targetAdds = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25];
+
+      setMatrixData({
+        model: { id: '', brand: 'Todos', name: 'Todos os Modelos', material: '', refractive_index: 0 },
+        base_curves: targetBases,
+        additions: targetAdds,
+        items_map: consolidatedMap
+      });
     } catch (err) {
       console.error("Erro ao carregar matriz de blocos:", err);
     } finally {
@@ -142,7 +165,8 @@ const GradeBlocos = () => {
         sale_price: 95.00,
         is_active: true,
         base_curves_config: '2.00, 4.00, 6.00',
-        additions_config: '0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00'
+        additions_config: '1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25',
+        initial_quantity: 0
       });
       await loadModels();
       setSelectedModelId(response.data.id);
@@ -243,59 +267,41 @@ const GradeBlocos = () => {
   };
 
   const baseCurves = (matrixData?.base_curves || [2.00, 4.00, 6.00]).filter(b => b <= 6.00);
-  const additions = (matrixData?.additions || [0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25]).filter(a => a >= 0.75 && a <= 3.25);
+  const additions = (matrixData?.additions || [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25]).filter(a => a >= 1.00 && a <= 3.25);
   const itemsMap = matrixData?.items_map || {};
 
   const getItemForSide = (base, add, side) => {
-    const keySide = `${base.toFixed(2)}_${add.toFixed(2)}_${side}`;
+    const sideNorm = (side.includes('E') || side === 'OE') ? 'OE' : 'OD';
+    const sideChar = sideNorm === 'OE' ? 'E' : 'D';
+    const keySide = `${base.toFixed(2)}_${add.toFixed(2)}_${sideNorm}`;
+    const keySideChar = `${base.toFixed(2)}_${add.toFixed(2)}_${sideChar}`;
     const keyAgg = `${base.toFixed(2)}_${add.toFixed(2)}`;
 
-    if (itemsMap[keySide]) {
-      const item = itemsMap[keySide];
-      if (item.isConsolidated && item.items) {
-        const sideItems = item.items.filter(i => i.eye_side === side);
-        const totalQty = sideItems.reduce((sum, i) => sum + (i.quantity_available || 0), 0);
-        return {
-          ...item,
-          quantity_available: totalQty,
-          location_tag: `${sideItems.length} Mod.`
-        };
-      }
-      return item;
-    }
+    const targetMapItem = itemsMap[keySide] || itemsMap[keySideChar] || itemsMap[keyAgg];
 
-    if (itemsMap[keyAgg] && itemsMap[keyAgg].items) {
-      const sideItems = itemsMap[keyAgg].items.filter(i => i.eye_side === side);
-      if (sideItems.length > 0) {
-        const totalQty = sideItems.reduce((sum, i) => sum + (i.quantity_available || 0), 0);
-        return {
-          base_curve: base,
-          addition: add,
-          eye_side: side,
-          quantity_available: totalQty,
-          isConsolidated: true,
-          items: sideItems,
-          location_tag: `${sideItems.length} Mod.`
-        };
-      }
-    }
+    if (targetMapItem) {
+      const itemsList = targetMapItem.items || [targetMapItem];
+      const sideItems = itemsList.filter(i => {
+        const itemEye = (i.eye || i.eye_side || 'OD').toString().toUpperCase().trim();
+        return (itemEye.includes('E') || itemEye === 'OE') === (sideNorm === 'OE');
+      });
 
-    if (itemsMap[keyAgg]) {
-      const agg = itemsMap[keyAgg];
-      const qty = side === 'D' ? Math.ceil((agg.quantity_available || 0) / 2) : Math.floor((agg.quantity_available || 0) / 2);
+      const totalQty = sideItems.reduce((sum, i) => sum + (i.quantity_available || 0), 0);
       return {
-        ...agg,
-        eye_side: side,
-        quantity_available: qty,
-        location_tag: agg.location_tag || (agg.items ? `${agg.items.length} Mod.` : '')
+        ...targetMapItem,
+        eye_side: sideNorm,
+        quantity_available: totalQty,
+        items: sideItems,
+        location_tag: `${sideItems.length} Mod.`
       };
     }
 
     return {
       base_curve: base,
       addition: add,
-      eye_side: side,
-      quantity_available: 0
+      eye_side: sideNorm,
+      quantity_available: 0,
+      items: []
     };
   };
 
@@ -322,18 +328,27 @@ const GradeBlocos = () => {
   // Auxiliares para o modal de detalhamento
   const getCellItemsList = () => {
     if (!selectedCell || !selectedCell.item) return [];
-    if (selectedCell.item.items) {
-      return selectedCell.item.items;
+    const cellSide = (selectedCell.item.eye_side || selectedCell.item.eye || 'OD').toString().toUpperCase().trim();
+    const isCellOE = cellSide.includes('E') || cellSide === 'OE';
+    const targetSide = isCellOE ? 'OE' : 'OD';
+
+    let rawList = selectedCell.item.items;
+    if (!rawList) {
+      rawList = [{
+        ...selectedCell.item,
+        block_model: matrixData?.model,
+        brand: matrixData?.model?.brand || 'Modelo Atual',
+        name: matrixData?.model?.name || '',
+        material: matrixData?.model?.material || 'CR-39',
+        refractive_index: matrixData?.model?.refractive_index || 1.56
+      }];
     }
-    // Caso seja modelo único
-    return [{
-      ...selectedCell.item,
-      block_model: matrixData?.model,
-      brand: matrixData?.model?.brand || 'Modelo Atual',
-      name: matrixData?.model?.name || '',
-      material: matrixData?.model?.material || 'CR-39',
-      refractive_index: matrixData?.model?.refractive_index || 1.56
-    }];
+
+    return rawList.filter(i => {
+      const itemEye = (i.eye || i.eye_side || 'OD').toString().toUpperCase().trim();
+      const isItemOE = itemEye.includes('E') || itemEye === 'OE';
+      return (targetSide === 'OE') === isItemOE;
+    });
   };
 
   const getTotalQtyInCell = () => {
@@ -455,7 +470,7 @@ const GradeBlocos = () => {
       {/* Cabeçalho da Página */}
       <div className="page-header" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '15px' }}>
         <div>
-          <h1 className="page-title">Matriz de Blocos (Grade Óptica)</h1>
+          <h1 className="page-title">Multifocal</h1>
           <p className="page-subtitle">Visualize e pesquise a quantidade e localização física de cada bloco no estoque.</p>
         </div>
 
@@ -467,14 +482,6 @@ const GradeBlocos = () => {
           >
             <FileText size={16} />
             Exportar PDF
-          </button>
-          <button 
-            className="btn btn-primary btn-sm" 
-            onClick={() => setShowNewModelModal(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} />
-            + Inserir Bloco Manualmente
           </button>
           <button 
             className="btn btn-secondary btn-sm" 
@@ -545,7 +552,7 @@ const GradeBlocos = () => {
 
         <div className="form-group" style={{ flex: 1, minWidth: '240px' }}>
           <label className="form-label" style={{ fontWeight: 'bold', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            FILTRAR POR MODELO
+            FILTRAR POR TRATAMENTO
           </label>
           <select
             className="form-control"
@@ -553,10 +560,10 @@ const GradeBlocos = () => {
             onChange={(e) => setSelectedModelId(e.target.value)}
             style={{ color: 'black' }}
           >
-            <option value="">Todos os Modelos ({models.length})</option>
+            <option value="">Todas as Marcas e Tratamentos Multifocal (Visão Consolidada)</option>
             {models.map(m => (
               <option key={m.id} value={m.id}>
-                {m.brand} - {m.name} (Ind. {m.refractive_index})
+                {m.brand} — {m.material} ({m.treatment}) [Rota: {m.production_route || 'SURFACAGEM_CNC'}]
               </option>
             ))}
           </select>
@@ -654,48 +661,52 @@ const GradeBlocos = () => {
 
       {/* MODAL: Cadastro de Novo Modelo de Bloco */}
       {showNewModelModal && (
-        <div className="modal-overlay" onClick={() => setShowNewModelModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-glass)', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Novo Modelo de Bloco Semiacabado</h3>
+        <div className="modal-overlay" onClick={() => setShowNewModelModal(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '15px' }}>
+          <div className="modal-content glass-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '680px', width: '100%', padding: '20px 24px', borderRadius: '16px', background: 'white', color: '#1e293b', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>Novo Modelo de Bloco Semiacabado</h3>
               <button onClick={() => setShowNewModelModal(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
             </div>
 
-            <form onSubmit={handleCreateModel} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label className="form-label" style={{ fontWeight: 700 }}>Marca / Fabricante</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Essilor, Hoya, Zeiss"
-                  className="form-control"
-                  value={newModelForm.brand}
-                  onChange={(e) => setNewModelForm({ ...newModelForm, brand: e.target.value })}
-                  style={{ color: 'black' }}
-                />
-              </div>
-
-              <div>
-                <label className="form-label" style={{ fontWeight: 700 }}>Nome do Modelo de Bloco</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Bloco Freeform 1.56"
-                  className="form-control"
-                  value={newModelForm.name}
-                  onChange={(e) => setNewModelForm({ ...newModelForm, name: e.target.value })}
-                  style={{ color: 'black' }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <form onSubmit={handleCreateModel} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Linha 1: Marca e Nome */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '12px' }}>
                 <div>
-                  <label className="form-label" style={{ fontWeight: 700 }}>Material</label>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '4px' }}>Marca / Fabricante *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Essilor, Hoya, Zeiss"
+                    className="form-control"
+                    value={newModelForm.brand}
+                    onChange={(e) => setNewModelForm({ ...newModelForm, brand: e.target.value })}
+                    style={{ color: 'black', padding: '7px 10px', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '4px' }}>Nome do Modelo de Bloco *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Bloco Freeform 1.56"
+                    className="form-control"
+                    value={newModelForm.name}
+                    onChange={(e) => setNewModelForm({ ...newModelForm, name: e.target.value })}
+                    style={{ color: 'black', padding: '7px 10px', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              {/* Linha 2: Material, Índice e Qtd Inicial */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '4px' }}>Material</label>
                   <select
                     className="form-control"
                     value={newModelForm.material}
                     onChange={(e) => setNewModelForm({ ...newModelForm, material: e.target.value })}
-                    style={{ color: 'black' }}
+                    style={{ color: 'black', padding: '7px 10px', fontSize: '0.85rem' }}
                   >
                     <option value="CR-39">CR-39</option>
                     <option value="Policarbonato">Policarbonato</option>
@@ -705,7 +716,7 @@ const GradeBlocos = () => {
                 </div>
 
                 <div>
-                  <label className="form-label" style={{ fontWeight: 700 }}>Índice Refração</label>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '4px' }}>Índice Refração</label>
                   <input
                     type="number"
                     step="0.01"
@@ -713,47 +724,66 @@ const GradeBlocos = () => {
                     className="form-control"
                     value={newModelForm.refractive_index}
                     onChange={(e) => setNewModelForm({ ...newModelForm, refractive_index: parseFloat(e.target.value) })}
-                    style={{ color: 'black' }}
+                    style={{ color: 'black', padding: '7px 10px', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '4px', color: 'hsl(var(--primary))' }}>
+                    📦 Qtd Inicial por Célula *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    placeholder="Ex: 10"
+                    className="form-control"
+                    value={newModelForm.initial_quantity}
+                    onChange={(e) => setNewModelForm({ ...newModelForm, initial_quantity: parseInt(e.target.value) || 0 })}
+                    style={{ color: 'black', fontWeight: 700, padding: '7px 10px', fontSize: '0.85rem' }}
                   />
                 </div>
               </div>
 
-              {/* Curvas Base & Adições Customizadas */}
-              <div style={{ background: 'rgba(147, 51, 234, 0.05)', padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
-                <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'hsl(var(--primary))' }}>
-                  📐 Definir Curvas Base & Adições da Grade
+              {/* Linha 3: Curvas Base & Adições Customizadas (0.00 a 3.25) */}
+              <div style={{ background: 'rgba(147, 51, 234, 0.04)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(147, 51, 234, 0.2)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontWeight: 800, fontSize: '0.82rem', color: 'hsl(var(--primary))' }}>
+                  📐 Definir Curvas Base & Adições da Grade (0.00 a 3.25)
                 </span>
 
-                <div>
-                  <label className="form-label" style={{ fontWeight: 700 }}>Curvas Base (Separadas por vírgula)</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: 2.00, 4.00, 6.00, 8.00"
-                    className="form-control"
-                    value={newModelForm.base_curves_config}
-                    onChange={(e) => setNewModelForm({ ...newModelForm, base_curves_config: e.target.value })}
-                    style={{ color: 'black' }}
-                  />
-                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '10px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: '0.78rem', marginBottom: '2px' }}>Curvas Base</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="2.00, 4.00, 6.00, 8.00"
+                      className="form-control"
+                      value={newModelForm.base_curves_config}
+                      onChange={(e) => setNewModelForm({ ...newModelForm, base_curves_config: e.target.value })}
+                      style={{ color: 'black', padding: '6px 8px', fontSize: '0.82rem' }}
+                    />
+                  </div>
 
-                <div>
-                  <label className="form-label" style={{ fontWeight: 700 }}>Adições da Grade (Separadas por vírgula)</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: 0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00"
-                    className="form-control"
-                    value={newModelForm.additions_config}
-                    onChange={(e) => setNewModelForm({ ...newModelForm, additions_config: e.target.value })}
-                    style={{ color: 'black' }}
-                  />
+                  <div>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: '0.78rem', marginBottom: '2px' }}>Adições da Grade (0.00 a 3.25)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="0.00, 0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25"
+                      className="form-control"
+                      value={newModelForm.additions_config}
+                      onChange={(e) => setNewModelForm({ ...newModelForm, additions_config: e.target.value })}
+                      style={{ color: 'black', padding: '6px 8px', fontSize: '0.82rem' }}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
-                <button type="button" onClick={() => setShowNewModelModal(false)} className="btn btn-secondary btn-sm">Cancelar</button>
-                <button type="submit" disabled={creatingModel} className="btn btn-primary btn-sm">
+              {/* Botões de Ação */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button type="button" onClick={() => setShowNewModelModal(false)} className="btn btn-secondary btn-sm" style={{ padding: '8px 16px', fontSize: '0.85rem' }}>Cancelar</button>
+                <button type="submit" disabled={creatingModel} className="btn btn-primary btn-sm" style={{ padding: '8px 20px', fontSize: '0.85rem', fontWeight: 700 }}>
                   {creatingModel ? 'Gerando Grade...' : 'Cadastrar e Gerar Grade'}
                 </button>
               </div>

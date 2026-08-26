@@ -397,6 +397,13 @@ const FechamentoFinanceiro = ({ laboratory }) => {
     }
   };
 
+  // Seletor dinâmico da quantidade de OSs a faturar
+  const handleSetQuantityToBill = (qty) => {
+    const validQty = Math.max(0, Math.min(qty, storeOrders.length));
+    const selected = storeOrders.slice(0, validQty).map(o => o.id);
+    setSelectedOrderIds(selected);
+  };
+
   // Formatadores
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -911,6 +918,113 @@ const FechamentoFinanceiro = ({ laboratory }) => {
               </div>
             </div>
 
+            {/* Controle de Seleção da Quantidade a Faturar */}
+            {!loadingOrders && storeOrders.length > 0 && (
+              <div style={{
+                background: 'rgba(147, 51, 234, 0.04)',
+                padding: '14px 16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(147, 51, 234, 0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'hsl(var(--primary))' }}>
+                    Quantas OSs deseja faturar?
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleSetQuantityToBill(selectedOrderIds.length - 1)}
+                      disabled={selectedOrderIds.length <= 0}
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(224,230,240,0.8)',
+                        background: 'white',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >-</button>
+                    <input
+                      type="number"
+                      min={0}
+                      max={storeOrders.length}
+                      value={selectedOrderIds.length}
+                      onChange={(e) => handleSetQuantityToBill(parseInt(e.target.value) || 0)}
+                      style={{
+                        width: '50px',
+                        height: '28px',
+                        textAlign: 'center',
+                        fontWeight: 'bold',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(147, 51, 234, 0.3)',
+                        fontSize: '0.9rem'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSetQuantityToBill(selectedOrderIds.length + 1)}
+                      disabled={selectedOrderIds.length >= storeOrders.length}
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(224,230,240,0.8)',
+                        background: 'white',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >+</button>
+                  </div>
+                </div>
+
+                {/* Seleção Rápida */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {[1, 3, 5, storeOrders.length].filter((val, idx, self) => val <= storeOrders.length && self.indexOf(val) === idx).map(num => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleSetQuantityToBill(num)}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: '16px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        border: selectedOrderIds.length === num ? '1px solid hsl(var(--primary))' : '1px solid rgba(224,230,240,0.8)',
+                        background: selectedOrderIds.length === num ? 'hsl(var(--primary))' : 'white',
+                        color: selectedOrderIds.length === num ? 'white' : 'hsl(var(--text-secondary))',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {num === storeOrders.length ? `Todas (${num})` : `${num} OS${num > 1 ? 's' : ''}`}
+                    </button>
+                  ))}
+                  {selectedOrderIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetQuantityToBill(0)}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: '16px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        background: 'rgba(239, 68, 68, 0.05)',
+                        color: 'rgb(239, 68, 68)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Listagem de OSs elegíveis da ótica */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -1097,51 +1211,147 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                   </div>
                 </div>
 
-                {/* Tabela de Ordens de Serviço Faturadas */}
+                {/* Tabela de Ordens de Serviço Consolidadas (Detalhamento Anexo 1 & Anexo 2) */}
                 <div style={{ marginBottom: '24px' }}>
-                  <h4 style={{ fontSize: '1rem', borderBottom: '1px solid rgba(224,230,240,0.8)', paddingBottom: '8px', marginBottom: '12px' }}>
-                    Ordens de Serviço Consolidadas ({invoiceDetail.items.length})
+                  <h4 style={{ fontSize: '1rem', borderBottom: '2px solid hsl(var(--primary) / 0.2)', paddingBottom: '8px', marginBottom: '16px', color: 'hsl(var(--text-primary))' }}>
+                    Detalhamento de Ordens de Serviço e Serviços Técnicos ({invoiceDetail.items.length} OS{invoiceDetail.items.length > 1 ? 's' : ''})
                   </h4>
 
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead>
-                      <tr style={{ background: 'rgba(15,23,42,0.03)' }}>
-                        <th style={{ padding: '10px', textAlign: 'left', borderBottom: '1px solid rgba(224,230,240,0.8)' }}>Nº da OS</th>
-                        <th style={{ padding: '10px', textAlign: 'left', borderBottom: '1px solid rgba(224,230,240,0.8)' }}>Paciente / Cliente</th>
-                        <th style={{ padding: '10px', textAlign: 'left', borderBottom: '1px solid rgba(224,230,240,0.8)' }}>Tipo de Lente & Serviços</th>
-                        <th style={{ padding: '10px', textAlign: 'left', borderBottom: '1px solid rgba(224,230,240,0.8)' }}>Tratamentos / Adicionais</th>
-                        <th style={{ padding: '10px', textAlign: 'right', borderBottom: '1px solid rgba(224,230,240,0.8)', width: '130px' }}>Valor Unitário</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoiceDetail.items.map((item, index) => (
-                        <tr key={item.id} style={{ borderBottom: '1px solid rgba(224,230,240,0.4)', background: index % 2 === 0 ? 'rgba(255,255,255,0.5)' : 'rgba(15,23,42,0.01)' }}>
-                          <td style={{ padding: '10px', fontWeight: 700, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {item.os_number || 'OS-N/A'}
-                          </td>
-                          <td style={{ padding: '10px', fontWeight: 600 }}>
-                            {item.client_name || 'Consumidor Final'}
-                          </td>
-                          <td style={{ padding: '10px' }}>
-                            <div style={{ fontWeight: 600, color: 'hsl(var(--text-primary))' }}>
-                              {item.lens_type || 'Lente Visão Simples / Multifocal Digital'}
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', marginTop: '2px' }}>
-                              {item.services || 'Surfaçagem Digital, Facetamento e Montagem em Aro'}
-                            </div>
-                          </td>
-                          <td style={{ padding: '10px', fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>
-                            <span style={{ display: 'inline-block', background: 'rgba(59, 130, 246, 0.08)', color: '#2563eb', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                              {item.treatments || 'Anti-Reflexo Premium, Filtro Azul UV400'}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {invoiceDetail.items.map((item) => (
+                      <div 
+                        key={item.id} 
+                        style={{ 
+                          border: '1px solid rgba(224,230,240,0.8)', 
+                          borderRadius: '10px', 
+                          overflow: 'hidden', 
+                          background: 'white',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+                        }}
+                      >
+                        {/* Header da OS */}
+                        <div style={{ 
+                          background: 'rgba(15,23,42,0.03)', 
+                          padding: '10px 16px', 
+                          display: 'flex', 
+                          justify: 'space-between', 
+                          alignItems: 'center', 
+                          borderBottom: '1px solid rgba(224,230,240,0.8)' 
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <span style={{ 
+                              fontFamily: 'monospace', 
+                              fontWeight: 700, 
+                              fontSize: '0.9rem', 
+                              color: 'hsl(var(--primary))',
+                              background: 'hsl(var(--primary) / 0.08)',
+                              padding: '2px 8px',
+                              borderRadius: '4px'
+                            }}>
+                              {item.os_number || 'OS-N/A'}
                             </span>
-                          </td>
-                          <td style={{ padding: '10px', textAlign: 'right', fontWeight: 700, fontSize: '0.95rem' }}>
-                            {formatCurrency(item.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'hsl(var(--text-primary))' }}>
+                              Paciente / Cliente: <strong>{item.client_name || 'Consumidor Final'}</strong>
+                            </span>
+                          </div>
+                          
+                          <div style={{ fontSize: '0.9rem', color: 'hsl(var(--text-secondary))' }}>
+                            Subtotal OS: <strong style={{ color: 'hsl(var(--text-primary))', fontSize: '1rem', marginLeft: '4px' }}>{formatCurrency(item.amount)}</strong>
+                          </div>
+                        </div>
+
+                        {/* Tabela de Itens e Serviços da OS (Layout Anexo 1) */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(15,23,42,0.015)', color: 'hsl(var(--text-secondary))' }}>
+                              <th style={{ padding: '8px 16px', textAlign: 'left', borderBottom: '1px solid rgba(224,230,240,0.6)', width: '30%' }}>Item / Serviço</th>
+                              <th style={{ padding: '8px 16px', textAlign: 'left', borderBottom: '1px solid rgba(224,230,240,0.6)', width: '35%' }}>Descrição do Catálogo</th>
+                              <th style={{ padding: '8px 16px', textAlign: 'center', borderBottom: '1px solid rgba(224,230,240,0.6)', width: '12%' }}>Tipo</th>
+                              <th style={{ padding: '8px 16px', textAlign: 'center', borderBottom: '1px solid rgba(224,230,240,0.6)', width: '10%' }}>Qtd</th>
+                              <th style={{ padding: '8px 16px', textAlign: 'right', borderBottom: '1px solid rgba(224,230,240,0.6)', width: '13%' }}>Valor (R$)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {item.detailed_items && item.detailed_items.length > 0 ? (
+                              item.detailed_items.map((detail, idx) => {
+                                const isLens = detail.item_type === 'Lente';
+                                const isService = detail.item_type === 'Serviço';
+                                const isTreatment = detail.item_type === 'Tratamento';
+
+                                const typeBg = isLens ? 'rgba(147, 51, 234, 0.1)' : isService ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)';
+                                const typeColor = isLens ? '#7e22ce' : isService ? '#1d4ed8' : '#047857';
+
+                                return (
+                                  <tr key={idx} style={{ borderBottom: idx === item.detailed_items.length - 1 ? 'none' : '1px solid rgba(224,230,240,0.4)' }}>
+                                    <td style={{ padding: '8px 16px', fontWeight: 600, color: 'hsl(var(--text-primary))' }}>
+                                      {detail.name}
+                                    </td>
+                                    <td style={{ padding: '8px 16px', color: 'hsl(var(--text-secondary))' }}>
+                                      {detail.description || '-'}
+                                    </td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'center' }}>
+                                      <span style={{ 
+                                        display: 'inline-block',
+                                        padding: '2px 8px', 
+                                        borderRadius: '12px', 
+                                        fontSize: '0.72rem', 
+                                        fontWeight: 700,
+                                        background: typeBg,
+                                        color: typeColor
+                                      }}>
+                                        {detail.item_type}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: 600, color: 'hsl(var(--text-primary))' }}>
+                                      {detail.quantity} {isLens ? 'un' : ''}
+                                    </td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 700, color: 'hsl(var(--text-primary))' }}>
+                                      {formatCurrency(detail.total_price ?? (detail.unit_price * detail.quantity))}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            ) : (
+                              /* Fallback para OSs legadas */
+                              <>
+                                <tr style={{ borderBottom: '1px solid rgba(224,230,240,0.4)' }}>
+                                  <td style={{ padding: '8px 16px', fontWeight: 600 }}>{item.lens_type || 'Lente Padrão Laboratorial'}</td>
+                                  <td style={{ padding: '8px 16px', color: 'hsl(var(--text-secondary))' }}>Lente Oftálmica Visão Simples / Digital</td>
+                                  <td style={{ padding: '8px 16px', textAlign: 'center' }}>
+                                    <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: 'rgba(147, 51, 234, 0.1)', color: '#7e22ce' }}>Lente</span>
+                                  </td>
+                                  <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: 600 }}>2 un</td>
+                                  <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(item.lens_price ?? item.amount ?? 0)}</td>
+                                </tr>
+                                {item.services && (
+                                  <tr style={{ borderBottom: '1px solid rgba(224,230,240,0.4)' }}>
+                                    <td style={{ padding: '8px 16px', fontWeight: 600 }}>{item.services}</td>
+                                    <td style={{ padding: '8px 16px', color: 'hsl(var(--text-secondary))' }}>Montagem e Acabamento de Precisão</td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'center' }}>
+                                      <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: 'rgba(59, 130, 246, 0.1)', color: '#1d4ed8' }}>Serviço</span>
+                                    </td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: 600 }}>1</td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(item.service_price ?? 0)}</td>
+                                  </tr>
+                                )}
+                                {item.treatments && item.treatments !== 'Incolor / Sem Tratamento' && (
+                                  <tr>
+                                    <td style={{ padding: '8px 16px', fontWeight: 600 }}>{item.treatments}</td>
+                                    <td style={{ padding: '8px 16px', color: 'hsl(var(--text-secondary))' }}>Tratamento de Superfície Lente</td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'center' }}>
+                                      <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: 'rgba(16, 185, 129, 0.1)', color: '#047857' }}>Tratamento</span>
+                                    </td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: 600 }}>1</td>
+                                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(item.treatment_price ?? 0)}</td>
+                                  </tr>
+                                )}
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
 

@@ -72,20 +72,39 @@ async def update_product_endpoint(
     """
     Atualiza as informações de um produto. Se o preço for alterado, gera versão no histórico.
     """
-    if payload.sku is not None:
-        db_prod = await crud_catalog.get_product(db, product_id)
-        if not db_prod:
-             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Produto não encontrado."
+    db_prod = await crud_catalog.get_product(db, product_id)
+    if not db_prod:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Produto não encontrado."
+        )
+
+    # Bloqueia alteração de preço de venda manual para lentes Visão Simples LP
+    if db_prod.is_lens or db_prod.lens_model_id or (db_prod.name and "LP " in db_prod.name.upper()):
+        is_lp_grade = False
+        if db_prod.lens_model_id:
+            from backend.app.models.lens import LensModel
+            from sqlalchemy import select
+            m_res = await db.execute(select(LensModel).where(LensModel.id == db_prod.lens_model_id))
+            lens_m = m_res.scalar_one_or_none()
+            if lens_m and lens_m.matrix_type == "LP_GRADE":
+                is_lp_grade = True
+        elif db_prod.name and ("LP " in db_prod.name.upper() or "VISÃO SIMPLES" in db_prod.name.upper()):
+            is_lp_grade = True
+
+        if is_lp_grade and payload.sale_price is not None and abs(float(payload.sale_price) - float(db_prod.sale_price)) > 0.001:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Os preços das lentes da grade Visão Simples LP são regidos pelos Parâmetros Globais do Sistema. Altere o valor na tela de Parâmetros do Sistema."
             )
-        if db_prod.sku != payload.sku:
-            existing = await crud_catalog.get_product_by_sku(db, sku=payload.sku)
-            if existing:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Já existe outro produto cadastrado com este SKU."
-                )
+
+    if payload.sku is not None and db_prod.sku != payload.sku:
+        existing = await crud_catalog.get_product_by_sku(db, sku=payload.sku)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Já existe outro produto cadastrado com este SKU."
+            )
                 
     updated = await crud_catalog.update_product(db, product_id, payload, user_id=current_user.id)
     if not updated:

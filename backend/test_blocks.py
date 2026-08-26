@@ -35,7 +35,9 @@ class TestBlockGrid(unittest.IsolatedAsyncioTestCase):
                 brand="Essilor",
                 name="Bloco Freeform Teste",
                 material="CR-39",
-                refractive_index=1.56
+                refractive_index=1.56,
+                base_curves_config="2.00, 4.00, 6.00",
+                additions_config="0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00"
             )
             model = await crud_block.create_block_model(session, payload)
             self.assertIsNotNone(model.id)
@@ -45,7 +47,7 @@ class TestBlockGrid(unittest.IsolatedAsyncioTestCase):
                 select(BlockGridItem).where(BlockGridItem.block_model_id == model.id)
             )
             items = res.scalars().all()
-            self.assertEqual(len(items), 30)
+            self.assertEqual(len(items), 60)
 
             # Verifica se cobre exatamente as curvas base 2.00, 4.00, 6.00
             bases = sorted(list(set(float(i.base_curve) for i in items)))

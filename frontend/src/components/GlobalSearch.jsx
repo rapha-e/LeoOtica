@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import api from "../services/api";
 
 const TYPE_ICONS = { os: "📋", otica: "🏪", lente: "🔬", nfe: "🧾" };
@@ -54,7 +54,7 @@ export default function GlobalSearch({ onNavigate }) {
   };
 
   const handleSelect = (result) => {
-    onNavigate?.(result.tab);
+    onNavigate?.(result.tab, result);
     setOpen(false);
     setQuery("");
   };
@@ -73,7 +73,7 @@ export default function GlobalSearch({ onNavigate }) {
         <input
           ref={inputRef}
           className="global-search__input"
-          placeholder="Pesquisar OS, cliente, ótica... (/)"
+          placeholder="Pesquisar OS, Pedido Loja, cliente, ótica... (/)"
           value={query}
           onChange={handleChange}
           onFocus={() => setOpen(true)}

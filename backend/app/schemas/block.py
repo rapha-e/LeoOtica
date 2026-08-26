@@ -13,10 +13,10 @@ class BlockModelBase(BaseModel):
     sale_price: float = 95.00
     is_active: bool = True
     base_curves_config: Optional[str] = "2.00, 4.00, 6.00"
-    additions_config: Optional[str] = "0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25"
+    additions_config: Optional[str] = "1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25"
 
 class BlockModelCreate(BlockModelBase):
-    pass
+    initial_quantity: Optional[int] = 0
 
 class BlockModelUpdate(BaseModel):
     brand: Optional[str] = None

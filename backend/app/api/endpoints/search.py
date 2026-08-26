@@ -1,4 +1,4 @@
-﻿from typing import List, Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, cast, String
@@ -35,24 +35,27 @@ async def global_search(
     results: List[SearchResult] = []
     term = f"%{q}%"
 
-    # 1. Ordens de Serviço — por número ou nome do cliente
+    # 1. Ordens de Serviço — por número de OS, número do pedido da loja, bandeja ou nome do cliente
     os_query = await db.execute(
         select(ServiceOrder)
         .where(
             or_(
                 ServiceOrder.os_number.ilike(term),
+                ServiceOrder.client_order_number.ilike(term),
+                ServiceOrder.tray_number.ilike(term),
                 ServiceOrder.client_name.ilike(term),
-                ServiceOrder.doctor_name.ilike(term),
             )
         )
         .limit(limit)
     )
     for os in os_query.scalars().all():
+        ped_info = f" (Pedido: {os.client_order_number})" if os.client_order_number else ""
+        tray_info = f" | Bandeja: {os.tray_number}" if os.tray_number else ""
         results.append(SearchResult(
             type="os",
             id=str(os.id),
-            title=f"OS #{os.os_number}",
-            subtitle=os.client_name or "Sem cliente",
+            title=f"OS #{os.os_number}{ped_info}",
+            subtitle=f"{os.client_name or 'Sem cliente'}{tray_info}",
             tab="os-workflow",
             icon="📋"
         ))
@@ -93,12 +96,23 @@ async def global_search(
         .limit(limit)
     )
     for lig, lm in lente_query.all():
+        m_type = lm.matrix_type or "LP_GRADE"
+        target_tab = "grid"
+        if m_type == "GRADE_167":
+            target_tab = "grid-167"
+        elif m_type == "MF_ACB":
+            target_tab = "grid-multifocal-acabado"
+        elif m_type == "BLOCO_VS":
+            target_tab = "matriz-visao-simples"
+        elif m_type == "MF_BLOCO":
+            target_tab = "grid-blocos"
+
         results.append(SearchResult(
             type="lente",
             id=str(lig.id),
-            title=f"{lm.brand} {lm.material} {lm.refractive_index}",
+            title=f"{lm.brand} {lm.material} {lm.refractive_index} [{m_type}]",
             subtitle=lig.barcode or f"Esf: {lig.spherical} | Cil: {lig.cylindrical}",
-            tab="grid",
+            tab=target_tab,
             icon="🔬"
         ))
 

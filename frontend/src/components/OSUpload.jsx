@@ -156,8 +156,8 @@ const OSUpload = ({ onOSCreated }) => {
     const payload = {
       optical_store_id: selectedStoreId,
       os_type: formMode === 'reparo' ? 'REPARO_SERVICO' : 'PADRAO',
+      os_number: manualForm.client_name || null,
       client_name: manualForm.client_name || null,
-      doctor_name: manualForm.doctor_name || null,
 
       od_spherical: parseLocaleFloat(manualForm.od_spherical),
       od_cylindrical: parseLocaleFloat(manualForm.od_cylindrical),
@@ -200,7 +200,6 @@ const OSUpload = ({ onOSCreated }) => {
     setCreatedOS(null);
     setManualForm({
       client_name: '',
-      doctor_name: '',
       od_spherical: '',
       od_cylindrical: '',
       od_axis: '',
@@ -411,26 +410,16 @@ const OSUpload = ({ onOSCreated }) => {
           {/* MODO MANUAL */}
           {formMode === 'manual' && (
             <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div className="form-grid">
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
                 <div className="form-group">
-                  <label className="form-label">Nome do Paciente *</label>
+                  <label className="form-label">NÚMERO DA ORDEM DE SERVIÇO *</label>
                   <input 
                     type="text" 
-                    placeholder="Ex: João da Silva" 
+                    placeholder="Ex: OS-2026-0001" 
                     className="form-control"
                     value={manualForm.client_name}
                     onChange={(e) => handleManualFormChange('client_name', e.target.value)}
                     required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Nome do Médico</label>
-                  <input 
-                    type="text" 
-                    placeholder="Ex: Dr. Roberto Alencar" 
-                    className="form-control"
-                    value={manualForm.doctor_name}
-                    onChange={(e) => handleManualFormChange('doctor_name', e.target.value)}
                   />
                 </div>
               </div>
@@ -578,7 +567,9 @@ const OSUpload = ({ onOSCreated }) => {
                     >
                       <option value="">Selecione a lente para alocação...</option>
                       {models.map(m => (
-                        <option key={m.id} value={m.id}>{m.brand} | {m.material} | Ø{m.diameter}mm (Custo: R$ {parseFloat(m.cost_price).toFixed(2)})</option>
+                        <option key={m.id} value={m.id}>
+                          {m.brand || m.name} — Tratamento: {m.treatment || 'Incolor'} | {m.material || 'Resina'} (n={m.refractive_index}) (Custo: R$ {parseFloat(m.cost_price || 0).toFixed(2)})
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -619,26 +610,16 @@ const OSUpload = ({ onOSCreated }) => {
           {/* MODO REPARO / SERVIÇOS */}
           {formMode === 'reparo' && (
             <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div className="form-grid">
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
                 <div className="form-group">
-                  <label className="form-label">Nome do Paciente / Cliente *</label>
+                  <label className="form-label">NÚMERO DA ORDEM DE SERVIÇO *</label>
                   <input 
                     type="text" 
-                    placeholder="Ex: João da Silva" 
+                    placeholder="Ex: OS-2026-0001" 
                     className="form-control"
                     value={manualForm.client_name}
                     onChange={(e) => handleManualFormChange('client_name', e.target.value)}
                     required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Nome do Médico (Opcional)</label>
-                  <input 
-                    type="text" 
-                    placeholder="Ex: Dr. Roberto Alencar" 
-                    className="form-control"
-                    value={manualForm.doctor_name}
-                    onChange={(e) => handleManualFormChange('doctor_name', e.target.value)}
                   />
                 </div>
               </div>
@@ -688,8 +669,7 @@ const OSUpload = ({ onOSCreated }) => {
             </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', fontSize: '0.85rem', color: 'hsl(var(--text-secondary))', borderBottom: '1px solid var(--border-glass)', paddingBottom: '12px', marginBottom: '12px' }}>
-              <div>Paciente: <strong style={{ color: 'white' }}>{createdOS.client_name || 'N/A'}</strong></div>
-              <div>Médico: <strong style={{ color: 'white' }}>{createdOS.doctor_name || 'N/A'}</strong></div>
+              <div>Ordem de Serviço: <strong style={{ color: 'white' }}>{createdOS.client_name || createdOS.os_number || 'N/A'}</strong></div>
               <div>Status: <span style={{ color: 'hsl(var(--primary))', fontWeight: 'bold' }}>{createdOS.status}</span></div>
             </div>
 

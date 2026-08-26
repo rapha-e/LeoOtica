@@ -1,12 +1,12 @@
 import uuid
-from datetime import datetime, timedelta, date
+from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, func, and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.models.financial_corp import AccountsPayable, AccountsReceivable, CostCenter, FinancialCategory
+from backend.app.models.financial_corp import AccountsPayable, AccountsReceivable, CostCenter, FinancialCategory, FinancialTransaction
 from backend.app.models.billing import BillingCycle
 from backend.app.models.optical_store import OpticalStore
 
@@ -21,14 +21,18 @@ async def sync_billing_cycles_to_receivables(db: AsyncSession):
     
     for cycle in cycles:
         rec_stmt = select(AccountsReceivable).where(AccountsReceivable.billing_cycle_id == cycle.id)
-        existing = (await db.execute(rec_stmt)).scalar_one_or_none()
+        existing = (await db.execute(rec_stmt)).scalars().first()
         
         if not existing:
             status = "RECEBIDO" if cycle.status == "PAGO" else "PENDENTE"
             due_dt = cycle.due_date or (cycle.created_at + timedelta(days=15))
             
+            # Normaliza para comparação segura com datetime.now(timezone.utc)
+            due_dt_aware = due_dt.replace(tzinfo=timezone.utc) if due_dt.tzinfo is None else due_dt.astimezone(timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+
             # Se a data de vencimento já passou e não foi pago, marca como ATRASADO
-            if status == "PENDENTE" and due_dt < datetime.utcnow():
+            if status == "PENDENTE" and due_dt_aware < now_utc:
                 status = "ATRASADO"
                 
             rec = AccountsReceivable(
@@ -51,16 +55,22 @@ async def check_optical_store_delinquency(db: AsyncSession, store_id: uuid.UUID)
     """
     await sync_billing_cycles_to_receivables(db)
     
-    now = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
     stmt = select(AccountsReceivable).where(
         and_(
             AccountsReceivable.optical_store_id == store_id,
-            AccountsReceivable.status.in_(["PENDENTE", "ATRASADO", "RECEBIDO_PARCIAL"]),
-            AccountsReceivable.due_date < now
+            AccountsReceivable.status.in_(["PENDENTE", "ATRASADO", "RECEBIDO_PARCIAL"])
         )
     )
     result = await db.execute(stmt)
-    overdue_items = result.scalars().all()
+    all_pending = result.scalars().all()
+
+    overdue_items = []
+    for item in all_pending:
+        if item.due_date:
+            item_due = item.due_date.replace(tzinfo=timezone.utc) if item.due_date.tzinfo is None else item.due_date.astimezone(timezone.utc)
+            if item_due < now_utc:
+                overdue_items.append((item, (now_utc - item_due).days))
     
     if not overdue_items:
         return {
@@ -71,8 +81,8 @@ async def check_optical_store_delinquency(db: AsyncSession, store_id: uuid.UUID)
             "items": []
         }
         
-    total_amount = sum(item.amount - item.amount_received for item in overdue_items)
-    max_days = max((now - item.due_date).days for item in overdue_items)
+    total_amount = sum(it[0].amount - it[0].amount_received for it in overdue_items)
+    max_days = max(it[1] for it in overdue_items)
     
     return {
         "is_delinquent": True,
@@ -86,7 +96,7 @@ async def check_optical_store_delinquency(db: AsyncSession, store_id: uuid.UUID)
                 "amount": float(item.amount),
                 "amount_received": float(item.amount_received),
                 "due_date": item.due_date.isoformat(),
-                "days_overdue": (now - item.due_date).days
+                "days_overdue": (now_utc - item.due_date).days if item.due_date else 0
             }
             for item in overdue_items
         ]
@@ -100,17 +110,20 @@ async def get_accounts_receivable(db: AsyncSession, status_filter: Optional[str]
         stmt = stmt.where(AccountsReceivable.status == status_filter)
         
     items = (await db.execute(stmt)).scalars().all()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     res = []
     for item in items:
         days_overdue = 0
         current_status = item.status
-        if current_status != "RECEBIDO" and item.due_date < now:
-            current_status = "ATRASADO"
-            days_overdue = max(1, (now - item.due_date).days)
-        elif current_status == "ATRASADO":
-            days_overdue = max(1, (now - item.due_date).days)
+        due = item.due_date
+        if due:
+            due_aware = due.replace(tzinfo=timezone.utc) if due.tzinfo is None else due.astimezone(timezone.utc)
+            if current_status != "RECEBIDO" and due_aware < now:
+                current_status = "ATRASADO"
+                days_overdue = max(1, (now - due_aware).days)
+            elif current_status == "ATRASADO":
+                days_overdue = max(1, (now - due_aware).days)
             
         res.append({
             "id": item.id,
@@ -139,20 +152,32 @@ async def receive_payment(db: AsyncSession, receivable_id: uuid.UUID, payment_am
     if rec.amount_received >= rec.amount:
         rec.amount_received = rec.amount
         rec.status = "RECEBIDO"
-        rec.received_at = datetime.utcnow()
+        rec.received_at = datetime.now(timezone.utc)
     else:
         rec.status = "RECEBIDO_PARCIAL"
         
     if notes:
-        rec.notes = (rec.notes or "") + f"\n[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Baixa de R$ {payment_amount:.2f}: {notes}"
+        rec.notes = (rec.notes or "") + f"\n[{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}] Baixa de R$ {payment_amount:.2f}: {notes}"
         
+    # Grava a transação financeira de receita
+    tx = FinancialTransaction(
+        id=uuid.uuid4(),
+        type="RECEITA",
+        category="FATURAMENTO",
+        amount=float(payment_dec),
+        description=f"Recebimento de título: {rec.description}",
+        transaction_date=datetime.now(timezone.utc),
+        accounts_receivable_id=rec.id
+    )
+    db.add(tx)
+
     # Sincroniza o BillingCycle se aplicável
     if rec.billing_cycle_id and rec.status == "RECEBIDO":
         cycle_stmt = select(BillingCycle).where(BillingCycle.id == rec.billing_cycle_id)
         cycle = (await db.execute(cycle_stmt)).scalar_one_or_none()
         if cycle:
             cycle.status = "PAGO"
-            cycle.paid_at = datetime.utcnow()
+            cycle.paid_at = datetime.now(timezone.utc)
             
     await db.commit()
     await db.refresh(rec)
@@ -170,14 +195,17 @@ async def get_accounts_payable(db: AsyncSession, status_filter: Optional[str] = 
         stmt = stmt.where(AccountsPayable.status == status_filter)
         
     items = (await db.execute(stmt)).scalars().all()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     res = []
     for item in items:
         days_overdue = 0
         current_status = item.status
-        if current_status in ["PENDENTE", "PAGO_PARCIAL"] and item.due_date < now:
-            days_overdue = (now - item.due_date).days
+        due = item.due_date
+        if due:
+            due_aware = due.replace(tzinfo=timezone.utc) if due.tzinfo is None else due.astimezone(timezone.utc)
+            if current_status in ["PENDENTE", "PAGO_PARCIAL"] and due_aware < now:
+                days_overdue = (now - due_aware).days
             
         res.append({
             "id": item.id,
@@ -214,7 +242,7 @@ async def create_account_payable(db: AsyncSession, data: Dict[str, Any]) -> Acco
     return payable
 
 async def pay_account_payable(db: AsyncSession, payable_id: uuid.UUID, payment_amount: float) -> AccountsPayable:
-    stmt = select(AccountsPayable).where(AccountsPayable.id == payable_id)
+    stmt = select(AccountsPayable).options(selectinload(AccountsPayable.category)).where(AccountsPayable.id == payable_id)
     pay = (await db.execute(stmt)).scalar_one_or_none()
     if not pay:
         raise ValueError("Conta a pagar não encontrada.")
@@ -224,10 +252,22 @@ async def pay_account_payable(db: AsyncSession, payable_id: uuid.UUID, payment_a
     if pay.amount_paid >= pay.amount:
         pay.amount_paid = pay.amount
         pay.status = "PAGO"
-        pay.payment_date = datetime.utcnow()
+        pay.payment_date = datetime.now(timezone.utc)
     else:
         pay.status = "PAGO_PARCIAL"
         
+    cat_name = pay.category.name if pay.category else ("FOLHA" if "FOLHA" in pay.description.upper() else "FORNECEDOR")
+    tx = FinancialTransaction(
+        id=uuid.uuid4(),
+        type="DESPESA",
+        category=cat_name,
+        amount=float(payment_dec),
+        description=f"Pagamento de conta: {pay.description} ({pay.supplier_name})",
+        transaction_date=datetime.now(timezone.utc),
+        accounts_payable_id=pay.id
+    )
+    db.add(tx)
+
     await db.commit()
     await db.refresh(pay)
     return pay
@@ -245,7 +285,7 @@ async def get_cash_flow(db: AsyncSession, timeframe: str = "monthly") -> List[Di
     
     # Agrupamento simples de fluxo nos últimos 30 dias e próximos 30 dias
     cash_flow_map = {}
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     for day_offset in range(-15, 30):
         target_date = (now + timedelta(days=day_offset)).strftime("%Y-%m-%d")
@@ -327,4 +367,87 @@ async def get_executive_financial_kpis(db: AsyncSession) -> Dict[str, Any]:
             "total_paid": sum(p["amount_paid"] for p in payables),
             "total_pending": sum(p["balance_due"] for p in payables if p["status"] != "PAGO")
         }
+    }
+
+
+async def get_consolidated_dre(db: AsyncSession, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Dict[str, Any]:
+    """
+    Calcula a Demonstração do Resultado do Exercício (DRE Consolidado):
+    Faturamento Bruto - CMV Real - Despesas Operacionais - Folha de Pagamento = Lucro Líquido
+    """
+    await sync_billing_cycles_to_receivables(db)
+    
+    now_utc = datetime.now(timezone.utc)
+    if not start_date:
+        start_date = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if not end_date:
+        end_date = now_utc
+        
+    # 1. Faturamento Bruto (Receitas faturadas/recebidas no período)
+    rec_stmt = select(func.sum(AccountsReceivable.amount)).where(
+        AccountsReceivable.due_date >= start_date,
+        AccountsReceivable.due_date <= end_date
+    )
+    total_billed = float((await db.execute(rec_stmt)).scalar() or 0.0)
+    
+    # 2. CMV Real (Custo dos Produtos/Insumos Consumidos em OSs entregues no período)
+    from backend.app.models.os import ServiceOrder, OSStatus
+    from backend.app.models.lens import LensInventoryGrade
+    
+    os_stmt = select(ServiceOrder).options(
+        selectinload(ServiceOrder.od_lens_inventory).selectinload(LensInventoryGrade.lens_model),
+        selectinload(ServiceOrder.oe_lens_inventory).selectinload(LensInventoryGrade.lens_model)
+    ).where(
+        ServiceOrder.created_at >= start_date,
+        ServiceOrder.created_at <= end_date,
+        ServiceOrder.status != OSStatus.CANCELADA
+    )
+    os_list = (await db.execute(os_stmt)).scalars().all()
+    
+    cmv_real = 0.0
+    for os_item in os_list:
+        if os_item.od_lens_inventory:
+            cmp_od = float(os_item.od_lens_inventory.average_cost_price or (os_item.od_lens_inventory.lens_model.cost_price if os_item.od_lens_inventory.lens_model else 25.0))
+            cmv_real += cmp_od
+        if os_item.oe_lens_inventory:
+            cmp_oe = float(os_item.oe_lens_inventory.average_cost_price or (os_item.oe_lens_inventory.lens_model.cost_price if os_item.oe_lens_inventory.lens_model else 25.0))
+            cmv_real += cmp_oe
+
+    # Margem Bruta
+    gross_margin = total_billed - cmv_real
+    
+    # 3. Folha de Pagamento (Contas a Pagar pagas/vencidas da categoria 'FOLHA')
+    folha_stmt = select(func.sum(AccountsPayable.amount_paid)).join(
+        FinancialCategory, AccountsPayable.category_id == FinancialCategory.id, isouter=True
+    ).where(
+        AccountsPayable.due_date >= start_date,
+        AccountsPayable.due_date <= end_date,
+        or_(FinancialCategory.name.ilike("%FOLHA%"), AccountsPayable.description.ilike("%FOLHA%"), AccountsPayable.description.ilike("%SALARIO%"))
+    )
+    payroll = float((await db.execute(folha_stmt)).scalar() or 0.0)
+    
+    # 4. Outras Despesas Operacionais / Fornecedores
+    total_despesas_stmt = select(func.sum(AccountsPayable.amount_paid)).where(
+        AccountsPayable.due_date >= start_date,
+        AccountsPayable.due_date <= end_date
+    )
+    total_paid = float((await db.execute(total_despesas_stmt)).scalar() or 0.0)
+    other_expenses = max(0.0, total_paid - payroll)
+    
+    # 5. Lucro Líquido
+    net_profit = gross_margin - payroll - other_expenses
+    net_margin_pct = round((net_profit / total_billed * 100), 2) if total_billed > 0 else 0.0
+    
+    return {
+        "period": {
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat()
+        },
+        "gross_revenue": round(total_billed, 2),
+        "cmv_real": round(cmv_real, 2),
+        "gross_margin": round(gross_margin, 2),
+        "payroll": round(payroll, 2),
+        "other_expenses": round(other_expenses, 2),
+        "net_profit": round(net_profit, 2),
+        "net_margin_pct": net_margin_pct
     }

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  DollarSign, Plus, Search, Edit2, Trash2, Clock, Check, 
+import {
+  DollarSign, Plus, Search, Edit2, Trash2, Clock, Check,
   X, AlertCircle, RefreshCw, Filter, ShieldAlert, History, Layers, FileText, Box
 } from 'lucide-react';
 import { ProductService, TreatmentService, TechnicalServiceService, BlockService } from '../services/api';
 
-const CatalogoFinanceiro = () => {
+const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
   const [activeSubTab, setActiveSubTab] = useState('products'); // products, blocks, treatments, services
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ const CatalogoFinanceiro = () => {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  
+
   const [selectedItem, setSelectedItem] = useState(null);
   const [historyData, setHistoryData] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -41,7 +41,7 @@ const CatalogoFinanceiro = () => {
     treatment: '',
     diameter: '',
     base_curves_config: '2.00, 4.00, 6.00',
-    additions_config: '0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00'
+    additions_config: '0.00, 0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25'
   });
 
   const [originalPrices, setOriginalPrices] = useState({
@@ -53,6 +53,17 @@ const CatalogoFinanceiro = () => {
   // Estados de Toast e Feedback
   const [toast, setToast] = useState(null);
   const [formError, setFormError] = useState('');
+
+  // Lista Padrão de Tratamentos LP
+  const LP_TREATMENTS_OPTIONS = [
+    { id: 'LP incolor 1.50', label: 'LP incolor 1.50', material: 'Resina', refractive_index: '1.50', defaultCost: '15.00', defaultSale: '60.00' },
+    { id: 'LP Ar 1.56', label: 'LP Ar 1.56', material: 'Resina', refractive_index: '1.56', defaultCost: '25.00', defaultSale: '75.00' },
+    { id: 'LP filtro Azul AR 1.56', label: 'LP filtro Azul AR 1.56', material: 'Resina', refractive_index: '1.56', defaultCost: '35.00', defaultSale: '95.00' },
+    { id: 'LP POLY AR 1.59', label: 'LP POLY AR 1.59', material: 'Policarbonato', refractive_index: '1.59', defaultCost: '40.00', defaultSale: '110.00' },
+    { id: 'LP POLY FILTRO AZUL AR 1.59', label: 'LP POLY FILTRO AZUL AR 1.59', material: 'Policarbonato', refractive_index: '1.59', defaultCost: '50.00', defaultSale: '130.00' },
+    { id: 'LP PHOTO AR 1.56', label: 'LP PHOTO AR 1.56', material: 'Fotocromática', refractive_index: '1.56', defaultCost: '55.00', defaultSale: '145.00' },
+    { id: 'LP PHOTO FILTRO AZUL AR 1.56', label: 'LP PHOTO FILTRO AZUL AR 1.56', material: 'Fotocromática', refractive_index: '1.56', defaultCost: '65.00', defaultSale: '170.00' }
+  ];
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -73,9 +84,9 @@ const CatalogoFinanceiro = () => {
         let list = response.data || [];
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
-          list = list.filter(m => 
-            m.name.toLowerCase().includes(q) || 
-            m.brand.toLowerCase().includes(q) || 
+          list = list.filter(m =>
+            m.name.toLowerCase().includes(q) ||
+            m.brand.toLowerCase().includes(q) ||
             m.material.toLowerCase().includes(q)
           );
         }
@@ -108,18 +119,22 @@ const CatalogoFinanceiro = () => {
   };
 
   // Abre formulário para criação
-  const handleOpenCreate = () => {
+  const handleOpenCreate = (targetTab = null) => {
+    const subTab = targetTab || activeSubTab;
+    if (targetTab) {
+      setActiveSubTab(subTab);
+    }
     setFormData({
       id: null,
       name: '',
       description: '',
       sku: '',
-      cost_price: activeSubTab === 'blocks' ? '35.00' : '25.00',
-      sale_price: activeSubTab === 'blocks' ? '95.00' : '75.00',
+      cost_price: subTab === 'blocks' ? '35.00' : '25.00',
+      sale_price: subTab === 'blocks' ? '95.00' : '75.00',
       price: '',
       is_active: true,
       change_reason: '',
-      is_lens: activeSubTab === 'products',
+      is_lens: subTab === 'products',
       brand: '',
       material: 'CR-39',
       refractive_index: '1.56',
@@ -354,7 +369,7 @@ const CatalogoFinanceiro = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', width: '100%' }}>
-      
+
       {/* Toast Feedback */}
       {toast && (
         <div style={{
@@ -384,10 +399,14 @@ const CatalogoFinanceiro = () => {
             Defina preços, gerencie versões e monitore custos e vendas para faturamento seguro.
           </p>
         </div>
-        
-        <div>
-          <button className="btn btn-primary" onClick={handleOpenCreate}>
-            <Plus size={18} /> Cadastrar {activeSubTab === 'products' ? 'Lente' : activeSubTab === 'blocks' ? 'Bloco Semiacabado' : activeSubTab === 'treatments' ? 'Tratamento' : 'Serviço'}
+
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => handleOpenCreate('services')}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+          >
+            <Plus size={16} /> Cadastrar Serviço
           </button>
         </div>
       </div>
@@ -399,7 +418,7 @@ const CatalogoFinanceiro = () => {
         paddingBottom: '2px',
         gap: '8px'
       }}>
-        <button 
+        <button
           onClick={() => { setActiveSubTab('products'); setSearchQuery(''); }}
           style={{
             padding: '12px 20px',
@@ -416,7 +435,7 @@ const CatalogoFinanceiro = () => {
           Lentes
         </button>
 
-        <button 
+        <button
           onClick={() => { setActiveSubTab('blocks'); setSearchQuery(''); }}
           style={{
             padding: '12px 20px',
@@ -436,24 +455,8 @@ const CatalogoFinanceiro = () => {
           <Box size={16} /> Blocos Semiacabados
         </button>
 
-        <button 
-          onClick={() => { setActiveSubTab('treatments'); setSearchQuery(''); }}
-          style={{
-            padding: '12px 20px',
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeSubTab === 'treatments' ? '3px solid hsl(var(--primary))' : '3px solid transparent',
-            color: activeSubTab === 'treatments' ? 'hsl(var(--primary))' : 'hsl(var(--text-muted))',
-            fontWeight: activeSubTab === 'treatments' ? 700 : 500,
-            cursor: 'pointer',
-            fontSize: '0.95rem',
-            transition: 'all 0.2s'
-          }}
-        >
-          Tratamentos de Lentes
-        </button>
 
-        <button 
+        <button
           onClick={() => { setActiveSubTab('services'); setSearchQuery(''); }}
           style={{
             padding: '12px 20px',
@@ -476,9 +479,9 @@ const CatalogoFinanceiro = () => {
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flexGrow: 1, minWidth: '280px' }}>
             <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'hsl(var(--text-muted))' }} />
-            <input 
-              type="text" 
-              className="form-control" 
+            <input
+              type="text"
+              className="form-control"
               placeholder={`Buscar por nome${activeSubTab === 'products' ? ' ou SKU' : activeSubTab === 'blocks' ? ' ou Marca' : ''}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -488,8 +491,8 @@ const CatalogoFinanceiro = () => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Filter size={16} style={{ color: 'hsl(var(--text-muted))' }} />
-            <select 
-              className="form-control" 
+            <select
+              className="form-control"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               style={{ width: '160px', padding: '8px 12px' }}
@@ -524,9 +527,9 @@ const CatalogoFinanceiro = () => {
               <tr style={{ borderBottom: '1px solid var(--border-glass)', background: 'rgba(255,255,255,0.02)' }}>
                 <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>Nome / Modelo</th>
                 <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>
-                  {activeSubTab === 'blocks' ? 'Especificação Técnica' : activeSubTab === 'products' ? 'SKU' : 'Descrição'}
+                  {activeSubTab === 'blocks' ? 'Especificação Técnica' : activeSubTab === 'products' ? 'Código de Barras (SKU)' : 'Descrição'}
                 </th>
-                
+
                 {(activeSubTab === 'products' || activeSubTab === 'blocks') ? (
                   <>
                     <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>Preço Custo</th>
@@ -535,7 +538,7 @@ const CatalogoFinanceiro = () => {
                 ) : (
                   <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>Preço</th>
                 )}
-                
+
                 {activeSubTab === 'blocks' && (
                   <>
                     <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>Curvas Base</th>
@@ -549,11 +552,11 @@ const CatalogoFinanceiro = () => {
             </thead>
             <tbody>
               {items.map(item => (
-                <tr 
-                  key={item.id} 
-                  style={{ 
+                <tr
+                  key={item.id}
+                  style={{
                     borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-                    background: item.is_active !== false ? 'transparent' : 'rgba(0,0,0,0.05)' 
+                    background: item.is_active !== false ? 'transparent' : 'rgba(0,0,0,0.05)'
                   }}
                   className="table-row-hover"
                 >
@@ -575,7 +578,7 @@ const CatalogoFinanceiro = () => {
                       item.description || '-'
                     )}
                   </td>
-                  
+
                   {(activeSubTab === 'products' || activeSubTab === 'blocks') ? (
                     <>
                       <td style={{ padding: '16px 20px', color: 'hsl(var(--text-secondary))', fontWeight: 500 }}>{formatCurrency(item.cost_price)}</td>
@@ -608,12 +611,12 @@ const CatalogoFinanceiro = () => {
                       {item.is_active !== false ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
-                  
+
                   <td style={{ padding: '16px 20px', textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '8px' }}>
                       {activeSubTab !== 'blocks' && (
-                        <button 
-                          className="btn btn-secondary" 
+                        <button
+                          className="btn btn-secondary"
                           style={{ padding: '6px 10px', fontSize: '0.8rem', borderRadius: '6px' }}
                           onClick={() => handleOpenHistory(item)}
                           title="Histórico de Preços"
@@ -621,19 +624,19 @@ const CatalogoFinanceiro = () => {
                           <Clock size={13} style={{ marginRight: '4px' }} /> Histórico
                         </button>
                       )}
-                      <button 
-                        className="btn btn-secondary" 
+                      <button
+                        className="btn btn-secondary"
                         style={{ padding: '6px 10px', fontSize: '0.8rem', borderRadius: '6px' }}
                         onClick={() => handleOpenEdit(item)}
                         title="Editar Item"
                       >
                         <Edit2 size={13} />
                       </button>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ 
-                          padding: '6px 10px', 
-                          fontSize: '0.8rem', 
+                      <button
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: '0.8rem',
                           borderRadius: '6px',
                           color: userRole === 'Administrador' ? 'hsl(var(--danger))' : 'hsl(var(--text-muted))',
                           borderColor: userRole === 'Administrador' ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
@@ -658,7 +661,7 @@ const CatalogoFinanceiro = () => {
       {isFormModalOpen && (
         <div className="modal-overlay" onClick={() => setIsFormModalOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '620px', width: '90%' }}>
-            <button 
+            <button
               style={{ position: 'absolute', right: '20px', top: '20px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'hsl(var(--text-muted))' }}
               onClick={() => setIsFormModalOpen(false)}
             >
@@ -667,21 +670,21 @@ const CatalogoFinanceiro = () => {
 
             <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Layers size={22} style={{ color: 'hsl(var(--primary))' }} />
-              {formData.id 
-                ? `Editar ${activeSubTab === 'products' ? 'Lente' : activeSubTab === 'blocks' ? 'Modelo de Bloco' : activeSubTab === 'treatments' ? 'Tratamento' : 'Serviço'}` 
+              {formData.id
+                ? `Editar ${activeSubTab === 'products' ? 'Lente' : activeSubTab === 'blocks' ? 'Modelo de Bloco' : activeSubTab === 'treatments' ? 'Tratamento' : 'Serviço'}`
                 : `Cadastrar ${activeSubTab === 'products' ? 'Lente' : activeSubTab === 'blocks' ? 'Modelo de Bloco' : activeSubTab === 'treatments' ? 'Tratamento' : 'Serviço'}`}
             </h3>
 
             <form onSubmit={handleSaveItem} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 <div className="form-group">
                   <label className="form-label">
                     {activeSubTab === 'blocks' ? 'Nome do Modelo de Bloco *' : 'Nome *'}
                   </label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
+                  <input
+                    type="text"
+                    className="form-control"
                     required
                     placeholder={activeSubTab === 'blocks' ? 'Ex: Bloco Freeform 1.56' : 'Ex: Antirreflexo Premium...'}
                     value={formData.name}
@@ -693,9 +696,9 @@ const CatalogoFinanceiro = () => {
                 {activeSubTab === 'blocks' && (
                   <div className="form-group">
                     <label className="form-label">Marca / Fabricante *</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
+                    <input
+                      type="text"
+                      className="form-control"
                       required
                       placeholder="Ex: Essilor, Hoya, Zeiss"
                       value={formData.brand}
@@ -707,19 +710,64 @@ const CatalogoFinanceiro = () => {
 
                 {activeSubTab === 'products' && (
                   <div className="form-group">
-                    <label className="form-label">SKU (Código único) *</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Código de Barras (SKU) *</span>
+                      {(formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) && (
+                        <span style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 700 }}>🔒 Fixo</span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
                       required
                       placeholder="Ex: LENT-CR39-AR"
                       value={formData.sku}
                       onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                      style={{ color: 'black' }}
+                      disabled={formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens}
+                      style={{
+                        color: 'black',
+                        backgroundColor: (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) ? '#f3f4f6' : 'white',
+                        cursor: (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) ? 'not-allowed' : 'text'
+                      }}
                     />
                   </div>
                 )}
               </div>
+
+              {(activeSubTab === 'products' || activeSubTab === 'treatments') && (
+                <div className="form-group">
+                  <label className="form-label">Selecione o Tratamento Padrão *</label>
+                  <select
+                    className="form-control"
+                    value={formData.treatment}
+                    onChange={(e) => {
+                      const sel = LP_TREATMENTS_OPTIONS.find(t => t.id === e.target.value);
+                      if (sel) {
+                        setFormData({
+                          ...formData,
+                          treatment: sel.id,
+                          name: formData.name || sel.label,
+                          material: sel.material,
+                          refractive_index: sel.refractive_index,
+                          cost_price: sel.defaultCost,
+                          sale_price: sel.defaultSale,
+                          price: sel.defaultSale
+                        });
+                      } else {
+                        setFormData({ ...formData, treatment: e.target.value });
+                      }
+                    }}
+                    style={{ color: 'black', fontWeight: 600 }}
+                  >
+                    <option value="">-- Selecione o Tratamento na lista do sistema --</option>
+                    {LP_TREATMENTS_OPTIONS.map((lp) => (
+                      <option key={lp.id} value={lp.id}>
+                        {lp.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {activeSubTab === 'blocks' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -739,10 +787,10 @@ const CatalogoFinanceiro = () => {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Índice Refração *</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       step="0.01"
-                      className="form-control" 
+                      className="form-control"
                       required
                       placeholder="Ex: 1.56"
                       value={formData.refractive_index}
@@ -756,45 +804,84 @@ const CatalogoFinanceiro = () => {
               {(activeSubTab === 'products' || activeSubTab === 'blocks') ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                   <div className="form-group">
-                    <label className="form-label">Preço de Custo (R$) *</label>
-                    <input 
-                      type="number" 
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Preço de Custo (R$) *</span>
+                    </label>
+                    <input
+                      type="number"
                       step="0.01"
-                      className="form-control" 
+                      className="form-control"
                       required
                       placeholder="0.00"
                       value={formData.cost_price}
                       onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
-                      style={{ color: 'black' }}
+                      style={{
+                        color: 'black',
+                        backgroundColor: 'white',
+                        cursor: 'text'
+                      }}
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Preço de Venda (R$) *</label>
-                    <input 
-                      type="number" 
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Preço de Venda (R$) *</span>
+                      {activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) && (
+                        <span style={{ fontSize: '0.72rem', color: '#3b82f6', fontWeight: 700 }}>🔒 Regido por Parâmetros</span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
                       step="0.01"
-                      className="form-control" 
+                      className="form-control"
                       required
                       placeholder="0.00"
                       value={formData.sale_price}
                       onChange={(e) => setFormData({ ...formData, sale_price: e.target.value })}
-                      style={{ color: 'black' }}
+                      disabled={activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)}
+                      style={{
+                        color: 'black',
+                        backgroundColor: (activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)) ? '#f3f4f6' : 'white',
+                        cursor: (activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)) ? 'not-allowed' : 'text'
+                      }}
+                      title={(activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)) ? "Preço regido exclusivamente pelos Parâmetros Globais do Sistema." : ""}
                     />
                   </div>
+                  {activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) && (
+                    <div style={{ gridColumn: '1 / -1', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '12px 16px', borderRadius: '10px', color: '#1e40af', fontSize: '0.85rem', fontWeight: 600, marginTop: '-4px' }}>
+                      ℹ️ <strong>Informação do Sistema:</strong> Para as lentes da grade Visão Simples LP, o <strong>Preço de Custo</strong> e o <strong>Nome / Descrição da Lente</strong> podem ser editados nesta tela. O <strong>Preço de Venda</strong> continua sendo regido exclusivamente pela opção <strong>Parâmetros do Sistema</strong>.
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="form-group" style={{ maxWidth: '270px' }}>
                   <label className="form-label">Preço de Venda (R$) *</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     step="0.01"
-                    className="form-control" 
+                    className="form-control"
                     required
                     placeholder="0.00"
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     style={{ color: 'black' }}
+                  />
+                </div>
+              )}
+
+              {isPriceChanged() && (
+                <div className="form-group" style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '12px', borderRadius: '8px' }}>
+                  <label className="form-label" style={{ color: '#d97706', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertCircle size={16} /> Justificativa da Alteração / Reajuste de Preço *
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Ex: Reajuste anual de tabela do fornecedor / Desconto comercial"
+                    value={formData.change_reason || ''}
+                    onChange={(e) => setFormData({ ...formData, change_reason: e.target.value })}
+                    style={{ color: 'black', background: 'white' }}
+                    required
                   />
                 </div>
               )}
@@ -827,7 +914,7 @@ const CatalogoFinanceiro = () => {
                   <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'hsl(var(--primary))' }}>
                     📐 Configuração de Curvas Base & Adições da Grade de Blocos
                   </span>
-                  
+
                   {/* Curvas Base: Exatamente 3 Opções (Base 2, 4 e 6) */}
                   <div className="form-group">
                     <label className="form-label" style={{ fontWeight: 700, color: '#1e293b' }}>
@@ -910,8 +997,8 @@ const CatalogoFinanceiro = () => {
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   id="catalog-active-checkbox"
                   checked={formData.is_active}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}

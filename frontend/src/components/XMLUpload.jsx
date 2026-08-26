@@ -17,6 +17,8 @@ const XMLUpload = () => {
   const [useExistingModel, setUseExistingModel] = useState(true);
   const [lensModelId, setLensModelId] = useState('');
   const [brand, setBrand] = useState('');
+  const [name, setName] = useState('');
+  const [matrixType, setMatrixType] = useState('LP_GRADE');
   const [material, setMaterial] = useState('');
   const [refractiveIndex, setRefractiveIndex] = useState('');
   const [treatment, setTreatment] = useState('');
@@ -128,6 +130,8 @@ const XMLUpload = () => {
         return;
       }
       payload.brand = brand;
+      payload.name = name || brand;
+      payload.matrix_type = matrixType || 'LP_GRADE';
       payload.material = material;
       payload.refractive_index = parseLocaleFloat(refractiveIndex);
       payload.treatment = treatment;
@@ -312,8 +316,18 @@ const XMLUpload = () => {
                       ) : (
                         <div className="glass-panel" style={{ padding: '12px', background: 'rgba(255,255,255,0.01)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                            <input type="text" placeholder="Marca (Fabricante)" className="form-control" style={{ fontSize: '0.78rem', height: '32px' }} value={brand} onChange={e => setBrand(e.target.value)} />
-                            <input type="text" placeholder="Material Lente" className="form-control" style={{ fontSize: '0.78rem', height: '32px' }} value={material} onChange={e => setMaterial(e.target.value)} />
+                            <input type="text" placeholder="Marca *" className="form-control" style={{ fontSize: '0.78rem', height: '32px' }} value={brand} onChange={e => setBrand(e.target.value)} required />
+                            <input type="text" placeholder="Modelo / Nome *" className="form-control" style={{ fontSize: '0.78rem', height: '32px' }} value={name} onChange={e => setName(e.target.value)} required />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <select className="form-control" style={{ fontSize: '0.78rem', height: '32px' }} value={matrixType} onChange={e => setMatrixType(e.target.value)}>
+                              <option value="LP_GRADE">Visão Simples LP_GRADE</option>
+                              <option value="GRADE_167">Grade 1.67 GRADE_167</option>
+                              <option value="MF_ACB">Multifocal Acabado MF_ACB</option>
+                              <option value="BLOCO_VS">Bloco VS BLOCO_VS</option>
+                              <option value="MF_BLOCO">Bloco MF MF_BLOCO</option>
+                            </select>
+                            <input type="text" placeholder="Material Lente *" className="form-control" style={{ fontSize: '0.78rem', height: '32px' }} value={material} onChange={e => setMaterial(e.target.value)} required />
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                             <input type="number" step="0.01" placeholder="Índice Refração" className="form-control" style={{ fontSize: '0.78rem', height: '32px' }} value={refractiveIndex} onChange={e => setRefractiveIndex(e.target.value)} />

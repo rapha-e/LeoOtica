@@ -538,8 +538,12 @@ const OSWorkflow = () => {
                     </div>
                   </div>
                   <div>
-                    <span style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', display: 'block' }}>PACIENTE</span>
-                    <span style={{ color: 'white', fontWeight: 600 }}>{os.client_name || 'Não identificado'}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', display: 'block' }}>ITENS / SERVIÇOS DO CATÁLOGO</span>
+                    <span style={{ color: 'white', fontWeight: 600, fontSize: '0.85rem' }}>
+                      {os.items && os.items.length > 0 
+                        ? os.items.map(i => i.name || i.description).join(', ') 
+                        : (os.clinical_notes || 'Lente Padrão Laboratorial')}
+                    </span>
                   </div>
                   {os.optical_store && (
                     <div>
@@ -1022,7 +1026,9 @@ const OSWorkflow = () => {
                             >
                               <option value="">Selecione...</option>
                               {models.map(m => (
-                                <option key={m.id} value={m.id}>{m.brand} | {m.material} | Ø{m.diameter}mm (Custo: R$ {parseFloat(m.cost_price).toFixed(2)})</option>
+                                <option key={m.id} value={m.id}>
+                                  {m.brand || m.name} — Tratamento: {m.treatment || 'Incolor'} | {m.material || 'Resina'} (n={m.refractive_index}) (Custo: R$ {parseFloat(m.cost_price || 0).toFixed(2)})
+                                </option>
                               ))}
                             </select>
                           </div>

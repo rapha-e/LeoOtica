@@ -3,7 +3,7 @@ from decimal import Decimal
 import sys
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select
 
@@ -147,8 +147,8 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
             cycle = await crud_billing.create_billing_cycle(
                 session,
                 optical_store_id=self.store1.id,
-                start_date=datetime.utcnow() - timedelta(days=7),
-                end_date=datetime.utcnow(),
+                start_date=datetime.now(timezone.utc) - timedelta(days=7),
+                end_date=datetime.now(timezone.utc),
                 service_order_ids=[os1.id, os2.id]
             )
             
@@ -193,8 +193,8 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
                 await crud_billing.create_billing_cycle(
                     session,
                     optical_store_id=self.store1.id,
-                    start_date=datetime.utcnow() - timedelta(days=1),
-                    end_date=datetime.utcnow(),
+                    start_date=datetime.now(timezone.utc) - timedelta(days=1),
+                    end_date=datetime.now(timezone.utc),
                     service_order_ids=[os_store1.id, os_store2.id]
                 )
             self.assertIn("pertence a outra ótica", str(context.exception))
@@ -204,8 +204,8 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
                 await crud_billing.create_billing_cycle(
                     session,
                     optical_store_id=self.store1.id,
-                    start_date=datetime.utcnow() - timedelta(days=1),
-                    end_date=datetime.utcnow(),
+                    start_date=datetime.now(timezone.utc) - timedelta(days=1),
+                    end_date=datetime.now(timezone.utc),
                     service_order_ids=[os_store1.id, os_received.id]
                 )
             self.assertIn("não está no status de Expedição", str(context.exception))
@@ -214,8 +214,8 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
             cycle = await crud_billing.create_billing_cycle(
                 session,
                 optical_store_id=self.store1.id,
-                start_date=datetime.utcnow() - timedelta(days=1),
-                end_date=datetime.utcnow(),
+                start_date=datetime.now(timezone.utc) - timedelta(days=1),
+                end_date=datetime.now(timezone.utc),
                 service_order_ids=[os_store1.id]
             )
             self.assertIsNotNone(cycle)
@@ -225,8 +225,8 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
                 await crud_billing.create_billing_cycle(
                     session,
                     optical_store_id=self.store1.id,
-                    start_date=datetime.utcnow() - timedelta(days=1),
-                    end_date=datetime.utcnow(),
+                    start_date=datetime.now(timezone.utc) - timedelta(days=1),
+                    end_date=datetime.now(timezone.utc),
                     service_order_ids=[os_store1.id]
                 )
             self.assertIn("já foi faturada em outro ciclo", str(context.exception))

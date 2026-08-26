@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy import String, Numeric, ForeignKey, DateTime, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,13 +31,14 @@ class BillingCycle(Base):
 
     @property
     def is_overdue(self) -> bool:
-        if self.status == "PAGO" or not self.due_date:
+        if self.status in ["PAGO", "Pago"] or not self.due_date:
             return False
+        from datetime import datetime, timezone
+        now_utc = datetime.now(timezone.utc)
         due = self.due_date
-        if due.tzinfo is not None:
-            from datetime import timezone
-            due = due.astimezone(timezone.utc).replace(tzinfo=None)
-        return due < datetime.utcnow()
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        return due < now_utc
 
 class BillingItem(Base):
     __tablename__ = "billing_items"

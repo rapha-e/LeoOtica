@@ -92,6 +92,12 @@ class TestBillingExports(unittest.IsolatedAsyncioTestCase):
             # Recarrega ciclo com relacionamentos pré-carregados
             cycle_loaded = await crud_billing.get_billing_cycle(session, cycle.id)
             
+            # Valida discriminação de valores de lente e serviço
+            self.assertEqual(len(cycle_loaded.items), 1)
+            item_loaded = cycle_loaded.items[0]
+            self.assertEqual(item_loaded.lens_price, 120.00)
+            self.assertEqual(item_loaded.service_price, 0.00)
+            
             # 1. Testar Geração de PDF
             pdf_bytes = generate_billing_pdf(cycle_loaded)
             self.assertIsNotNone(pdf_bytes)

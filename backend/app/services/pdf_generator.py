@@ -721,40 +721,99 @@ def generate_billing_pdf(cycle, laboratory=None) -> bytes:
     story.append(outer_box_table)
 
     # 3. TÍTULO DOS ITENS
-    story.append(Paragraph("Detalhamento das Ordens de Serviço Consolidadas", style_sec_title))
+    story.append(Paragraph("Detalhamento de Itens e Serviços na Fatura (Padrão Catálogo)", style_sec_title))
     story.append(Spacer(1, 5))
 
-    # 4. TABELA DE ITENS COM DETALHAMENTO DE LENTES, TRATAMENTOS E SERVIÇOS
+    # 4. TABELA DE ITENS COM DETALHAMENTO DO ANEXO 1 (ITEM/SERVIÇO, DESCRIÇÃO, TIPO, QTD, VALOR)
     headers = [
-        Paragraph("CÓDIGO OS", style_tbl_header_left),
-        Paragraph("PACIENTE / CLIENTE", style_tbl_header_left),
-        Paragraph("LENTE & SERVIÇOS", style_tbl_header_left),
-        Paragraph("TRATAMENTOS", style_tbl_header_left),
+        Paragraph("ITEM / SERVIÇO", style_tbl_header_left),
+        Paragraph("DESCRIÇÃO DO CATÁLOGO", style_tbl_header_left),
+        Paragraph("TIPO", style_tbl_header),
+        Paragraph("QTD", style_tbl_header),
         Paragraph("VALOR (R$)", style_tbl_header)
     ]
     
     table_data = [headers]
     
-    for item in cycle.items:
-        amount_val = item.amount or 0.0
-        formatted_val = f"R$ {amount_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        
-        lens_txt = getattr(item, "lens_type", "Lente Visão Simples / Multifocal Digital")
-        serv_txt = getattr(item, "services", "Surfaçagem Digital, Facetamento e Montagem")
-        treat_txt = getattr(item, "treatments", "Anti-Reflexo Premium, Filtro Azul UV400")
+    style_os_header = ParagraphStyle(
+        'BillingOsHeader',
+        fontName=font_family_bold,
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor('#1F4E78'),
+        alignment=TA_LEFT
+    )
 
-        lens_serv_combined = f"<b>{lens_txt}</b><br/><font color='#6B7280' size='7.5'>{serv_txt}</font>"
+    for item in cycle.items:
+        os_num = getattr(item, "os_number", None) or "OS-N/A"
+        client = getattr(item, "client_name", None) or "Consumidor Final"
         
-        row = [
-            Paragraph(item.os_number or "OS-N/A", style_tbl_cell_left),
-            Paragraph(item.client_name or "Consumidor Final", style_tbl_cell_left),
-            Paragraph(lens_serv_combined, style_tbl_cell_left),
-            Paragraph(treat_txt, style_tbl_cell_left),
-            Paragraph(formatted_val, style_tbl_cell_bold)
+        # Linha separadora de cabeçalho da OS
+        os_hdr_row = [
+            Paragraph(f"<b>OS: {os_num}</b> — Paciente / Cliente: <b>{client}</b>", style_os_header),
+            "", "", "",
+            Paragraph(f"<b>R$ {(item.amount or 0.0):,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_tbl_cell_bold)
         ]
-        table_data.append(row)
+        table_data.append(os_hdr_row)
+
+        detailed_list = getattr(item, "detailed_items", []) or []
+        if detailed_list:
+            for detail in detailed_list:
+                d_name = getattr(detail, "name", "") or "Item"
+                d_desc = getattr(detail, "description", "") or "-"
+                d_type = getattr(detail, "item_type", "") or "Serviço"
+                d_qty = getattr(detail, "quantity", 1)
+                d_price = float(getattr(detail, "total_price", 0.0) or 0.0)
+                
+                qty_str = f"{d_qty} un" if d_type == "Lente" else f"{d_qty}"
+                fmt_price = f"R$ {d_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+                row = [
+                    Paragraph(f"  • {d_name}", style_tbl_cell_left),
+                    Paragraph(d_desc, style_tbl_cell_left),
+                    Paragraph(d_type, style_tbl_cell),
+                    Paragraph(qty_str, style_tbl_cell),
+                    Paragraph(fmt_price, style_tbl_cell)
+                ]
+                table_data.append(row)
+        else:
+            # Fallback de compatibilidade
+            l_txt = getattr(item, "lens_type", "Lente Padrão Laboratorial")
+            l_price = getattr(item, "lens_price", item.amount or 0.0) or 0.0
+            fmt_lprice = f"R$ {l_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            table_data.append([
+                Paragraph(f"  • {l_txt}", style_tbl_cell_left),
+                Paragraph("Lente Oftálmica Visão Simples / Digital", style_tbl_cell_left),
+                Paragraph("Lente", style_tbl_cell),
+                Paragraph("2 un", style_tbl_cell),
+                Paragraph(fmt_lprice, style_tbl_cell)
+            ])
+            
+            s_txt = getattr(item, "services", None)
+            s_price = getattr(item, "service_price", 0.0) or 0.0
+            if s_txt:
+                fmt_sprice = f"R$ {s_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                table_data.append([
+                    Paragraph(f"  • {s_txt}", style_tbl_cell_left),
+                    Paragraph("Montagem e Acabamento de Precisão", style_tbl_cell_left),
+                    Paragraph("Serviço", style_tbl_cell),
+                    Paragraph("1", style_tbl_cell),
+                    Paragraph(fmt_sprice, style_tbl_cell)
+                ])
+
+            t_txt = getattr(item, "treatments", None)
+            t_price = getattr(item, "treatment_price", 0.0) or 0.0
+            if t_txt and t_txt != "Incolor / Sem Tratamento":
+                fmt_tprice = f"R$ {t_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                table_data.append([
+                    Paragraph(f"  • {t_txt}", style_tbl_cell_left),
+                    Paragraph("Tratamento de Superfície Lente", style_tbl_cell_left),
+                    Paragraph("Tratamento", style_tbl_cell),
+                    Paragraph("1", style_tbl_cell),
+                    Paragraph(fmt_tprice, style_tbl_cell)
+                ])
         
-    col_widths = [85, 100, 135, 115, 80]
+    col_widths = [135, 180, 60, 50, 90]
     
     t = Table(table_data, colWidths=col_widths)
 
@@ -767,14 +826,24 @@ def generate_billing_pdf(cycle, laboratory=None) -> bytes:
         ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
     ]))
     
-    # Zebrado
+    # Estilização das linhas (zebrado + fundos para cabeçalhos de OS)
     for i in range(1, len(table_data)):
-        bg_color = colors.HexColor('#F9FAFB') if i % 2 == 0 else colors.white
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, i), (-1, i), bg_color),
-            ('TOPPADDING', (0, i), (-1, i), 7),
-            ('BOTTOMPADDING', (0, i), (-1, i), 7),
-        ]))
+        row_cells = table_data[i]
+        # Se for linha de cabeçalho de OS (4 células vazias/mescladas)
+        if len(row_cells) == 5 and row_cells[1] == "" and row_cells[2] == "":
+            t.setStyle(TableStyle([
+                ('SPAN', (0, i), (3, i)),
+                ('BACKGROUND', (0, i), (-1, i), colors.HexColor('#EBF2FA')),
+                ('TOPPADDING', (0, i), (-1, i), 6),
+                ('BOTTOMPADDING', (0, i), (-1, i), 6),
+            ]))
+        else:
+            bg_color = colors.HexColor('#F9FAFB') if i % 2 == 0 else colors.white
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, i), (-1, i), bg_color),
+                ('TOPPADDING', (0, i), (-1, i), 5),
+                ('BOTTOMPADDING', (0, i), (-1, i), 5),
+            ]))
         
     story.append(t)
     story.append(Spacer(1, 15))

@@ -1,5 +1,5 @@
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,7 +70,7 @@ async def calculate_predictive_alerts(
     block_stmt = select(BlockGridItem).options(selectinload(BlockGridItem.block_model))
     block_items = (await db.execute(block_stmt)).scalars().all()
     
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
     for bitem in block_items:
         if not bitem.block_model or not bitem.block_model.is_active:
             continue

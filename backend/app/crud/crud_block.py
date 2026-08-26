@@ -10,9 +10,8 @@ from backend.app.schemas.block import BlockModelCreate, BlockModelUpdate, BlockG
 
 DEFAULT_BASE_CURVES = [Decimal("2.00"), Decimal("4.00"), Decimal("6.00")]
 DEFAULT_ADDITIONS = [
-    Decimal("0.75"), Decimal("1.00"), Decimal("1.25"), Decimal("1.50"),
-    Decimal("1.75"), Decimal("2.00"), Decimal("2.25"), Decimal("2.50"),
-    Decimal("2.75"), Decimal("3.00"), Decimal("3.25")
+    Decimal("1.00"), Decimal("1.25"), Decimal("1.50"), Decimal("1.75"), Decimal("2.00"), Decimal("2.25"),
+    Decimal("2.50"), Decimal("2.75"), Decimal("3.00"), Decimal("3.25")
 ]
 
 def parse_decimal_list(config_str: Optional[str], default_list: List[Decimal]) -> List[Decimal]:
@@ -60,8 +59,8 @@ async def create_block_model(db: AsyncSession, data: BlockModelCreate) -> BlockM
     db.add(block_model)
     await db.flush()
 
-    # Gera a matriz de células zeradas com base nas curvas e adições especificadas
-    await generate_grid_for_model(db, block_model.id)
+    # Gera a matriz de células com base nas curvas, adições e quantidade inicial especificada
+    await generate_grid_for_model(db, block_model.id, initial_quantity=data.initial_quantity or 0)
     await db.commit()
     return await get_block_model_by_id(db, block_model.id)
 
@@ -107,7 +106,7 @@ async def delete_block_model(db: AsyncSession, model_id: uuid.UUID) -> bool:
     await db.commit()
     return True
 
-async def generate_grid_for_model(db: AsyncSession, model_id: uuid.UUID) -> List[BlockGridItem]:
+async def generate_grid_for_model(db: AsyncSession, model_id: uuid.UUID, initial_quantity: int = 0) -> List[BlockGridItem]:
     """Gera as células da grade para o modelo de bloco com suporte a olho Direito (D) e Esquerdo (E)."""
     block_model = await get_block_model_by_id(db, model_id)
     
@@ -168,7 +167,7 @@ async def generate_grid_for_model(db: AsyncSession, model_id: uuid.UUID) -> List
                         base_curve=base,
                         addition=add,
                         eye_side=side,
-                        quantity_available=0,
+                        quantity_available=initial_quantity,
                         quantity_reserved=0,
                         min_stock=2
                     )

@@ -293,9 +293,9 @@ const OCRValidationView = ({ file, opticalStoreId, onCancel, onConfirm }) => {
               )}
 
               {/* Informações Básicas */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
                 <div className="form-group">
-                  <label className="form-label">Nome do Paciente *</label>
+                  <label className="form-label">Ordem de Serviço / Cliente *</label>
                   <input 
                     type="text" 
                     className="form-control" 
@@ -303,16 +303,6 @@ const OCRValidationView = ({ file, opticalStoreId, onCancel, onConfirm }) => {
                     onChange={(e) => handleFieldChange('client_name', e.target.value)} 
                     style={getConfidenceStyle('client_name')}
                     required 
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Médico Oftalmologista</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={formData.doctor_name} 
-                    onChange={(e) => handleFieldChange('doctor_name', e.target.value)} 
-                    style={getConfidenceStyle('doctor_name')}
                   />
                 </div>
               </div>
@@ -396,7 +386,9 @@ const OCRValidationView = ({ file, opticalStoreId, onCancel, onConfirm }) => {
                     >
                       <option value="">Selecione a lente base...</option>
                       {models.map(m => (
-                        <option key={m.id} value={m.id}>{m.brand} | {m.material} | Ø{m.diameter}mm</option>
+                        <option key={m.id} value={m.id}>
+                          {m.brand || m.name} — Tratamento: {m.treatment || 'Incolor'} | {m.material || 'Resina'} (n={m.refractive_index})
+                        </option>
                       ))}
                     </select>
                   </div>

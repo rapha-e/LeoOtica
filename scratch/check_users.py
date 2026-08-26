@@ -1,24 +1,27 @@
-import asyncio
-import sys
 import os
+import sys
+import sqlite3
 
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+db_path = "backend/leootica.db"
+conn = sqlite3.connect(db_path)
+cursor = conn.cursor()
 
-from backend.app.core.database import AsyncSessionLocal
-from backend.app.models.user import User
-from backend.app.core.security import verify_password
-from sqlalchemy import select
+cursor.execute("SELECT id, name, email FROM users;")
+users = cursor.fetchall()
 
-async def check():
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User))
-        users = result.scalars().all()
-        print("Usuários cadastrados no banco de dados:")
-        for u in users:
-            is_valid = verify_password("Dio@sup.2203", u.hashed_password)
-            print(f"- ID: {u.id} | Email/Login: '{u.email}' | Nome: '{u.name}' | Senha Válida: {is_valid}")
+print("--- Usuários cadastrados no banco ---")
+for u in users:
+    print(f"ID: {u[0]} | Nome: {u[1]} | Email/Login: {u[2]}")
 
-if __name__ == "__main__":
-    asyncio.run(check())
+cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+tables = cursor.fetchall()
+
+print("\n--- Verificação do número de linhas por tabela ---")
+for tbl in tables:
+    tname = tbl[0]
+    cursor.execute(f"SELECT COUNT(*) FROM {tname};")
+    count = cursor.fetchone()[0]
+    if count > 0:
+        print(f"   • {tname}: {count} registro(s)")
+
+conn.close()

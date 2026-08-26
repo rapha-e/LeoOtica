@@ -40,36 +40,36 @@ export default function DashboardExecutivo({ onNavigate }) {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const getApiBaseUrl = () => {
-    const hostname = window.location.hostname;
-    return `http://${hostname}:8000/api/v1`;
-  };
-
-  const getHeaders = () => {
-    const token = localStorage.getItem('factory_token') || localStorage.getItem('token');
-    return { 'Authorization': `Bearer ${token}` };
-  };
-
   const fetchData = async () => {
     setLoading(true);
     try {
-      const headers = getHeaders();
-      const baseUrl = getApiBaseUrl();
-      const [resFin, resEngine, resProd, resRec, resPay, resFlow] = await Promise.all([
-        fetch(`${baseUrl}/finance-corp/kpis-executive`, { headers }),
-        fetch(`${baseUrl}/inventory/predictive-report`, { headers }),
-        fetch(`${baseUrl}/os/dashboard/kpis`, { headers }),
-        fetch(`${baseUrl}/finance-corp/receivables`, { headers }),
-        fetch(`${baseUrl}/finance-corp/payables`, { headers }),
-        fetch(`${baseUrl}/finance-corp/cash-flow`, { headers })
+      const [resFin, resEngine, resProd, resRec, resPay, resFlow] = await Promise.allSettled([
+        api.get('/finance-corp/kpis-executive'),
+        api.get('/inventory/predictive-report'),
+        api.get('/os/dashboard/kpis'),
+        api.get('/finance-corp/receivables'),
+        api.get('/finance-corp/payables'),
+        api.get('/finance-corp/cash-flow')
       ]);
 
-      if (resFin.ok) setFinKpis(await resFin.json());
-      if (resEngine.ok) setPredictiveEngine(await resEngine.json());
-      if (resProd.ok) setProductionKpis(await resProd.json());
-      if (resRec.ok) setReceivables(await resRec.json());
-      if (resPay.ok) setPayables(await resPay.json());
-      if (resFlow.ok) setCashFlow(await resFlow.json());
+      if (resFin.status === 'fulfilled' && resFin.value?.data) {
+        setFinKpis(resFin.value.data);
+      }
+      if (resEngine.status === 'fulfilled' && resEngine.value?.data) {
+        setPredictiveEngine(resEngine.value.data);
+      }
+      if (resProd.status === 'fulfilled' && resProd.value?.data) {
+        setProductionKpis(resProd.value.data);
+      }
+      if (resRec.status === 'fulfilled' && resRec.value?.data) {
+        setReceivables(resRec.value.data);
+      }
+      if (resPay.status === 'fulfilled' && resPay.value?.data) {
+        setPayables(resPay.value.data);
+      }
+      if (resFlow.status === 'fulfilled' && resFlow.value?.data) {
+        setCashFlow(resFlow.value.data);
+      }
 
       showToast('Dashboard Executivo atualizado com sucesso!');
     } catch (err) {

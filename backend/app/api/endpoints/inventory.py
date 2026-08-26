@@ -24,14 +24,15 @@ router = APIRouter()
 @router.get("/grid", response_model=List[LensInventoryGradeResponse])
 async def get_inventory_grid_view(
     lens_model_id: Optional[uuid.UUID] = None,
+    matrix_type: Optional[str] = None,
     current_user: Any = Depends(get_current_active_operator),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna a matriz de grade de estoque para visualização geral das lentes.
-    Pode ser filtrada por modelo de lente específico.
+    Pode ser filtrada por modelo de lente específico e/ou por tipo de matriz.
     """
-    return await crud_lens.get_inventory_grid(db, lens_model_id)
+    return await crud_lens.get_inventory_grid(db, lens_model_id=lens_model_id, matrix_type=matrix_type)
 
 @router.get("/predictive-report")
 async def get_predictive_inventory_report_endpoint(
@@ -44,6 +45,25 @@ async def get_predictive_inventory_report_endpoint(
     return await crud_lens.get_predictive_inventory_report(db)
 
 
+@router.get("/by-barcode/{barcode}", response_model=LensInventoryGradeResponse)
+async def get_inventory_by_barcode_endpoint(
+    barcode: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(get_current_active_operator)
+):
+    """
+    Busca os detalhes de uma lente no estoque pelo código de barras sem incrementar a quantidade.
+    Útil para seleção por bipador na tela de cadastro de OS.
+    """
+    inventory_item = await crud_lens.get_inventory_by_barcode(db, barcode)
+    if not inventory_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Código de barras não encontrado no estoque."
+        )
+    return inventory_item
+
+
 @router.post("/scan", response_model=ScanResponse)
 async def scan_barcode(
     payload: ScanRequest,
@@ -52,25 +72,24 @@ async def scan_barcode(
 ):
     """
     Bipa um código de barras.
-    Se o código já existir, incrementa (+1) o estoque e registra como 'AUDIT'.
+    Se o código já existir, incrementa a quantidade solicitada (padrão +1) no estoque.
     Se for inédito, retorna found=False para abrir a tela de cadastro (fallback).
     """
     inventory_item = await crud_lens.get_inventory_by_barcode(db, payload.barcode)
     
     if inventory_item:
-        # Incrementa estoque e registra a movimentação AUDIT
+        qty_to_add = payload.quantity if (payload.quantity and payload.quantity > 0) else 1
         movement_in = StockMovementCreate(
             lens_inventory_id=inventory_item.id,
             movement_type="AUDIT",
-            quantity=1,
-            reason="Bipagem Mobile Rápida"
+            quantity=qty_to_add,
+            reason=f"Bipagem e Incremento de Estoque (+{qty_to_add})"
         )
         updated_movement = await crud_movement.create_stock_movement(db, movement_in)
         
-        # O updated_movement já atualizou e carregou o inventory_item
         return ScanResponse(
             found=True,
-            message="Bipagem registrada com sucesso. Estoque incrementado.",
+            message=f"Bipagem registrada com sucesso. Estoque incrementado em +{qty_to_add} unidade(s).",
             item=LensInventoryGradeResponse.model_validate(updated_movement.lens_inventory)
         )
     
@@ -90,6 +109,33 @@ async def register_fallback(
     Registra uma lente inédita bipada no fluxo de fallback manual.
     Cria ou vincula ao modelo de lente e insere a dioptria na grade de estoque.
     """
+    # 0. Validação dos limites de dioptria para matriz Visão Simples LP (Esférico -6 a +6 / Cilíndrico 0 a -4)
+    target_matrix = payload.matrix_type or "LP_GRADE"
+    if payload.lens_model_id and not payload.matrix_type:
+        l_model = await crud_lens.get_lens_model(db, payload.lens_model_id)
+        if l_model:
+            target_matrix = l_model.matrix_type or "LP_GRADE"
+
+    if target_matrix == "LP_GRADE":
+        sph_val = float(payload.spherical if payload.spherical is not None else 0.0)
+        cyl_val = float(payload.cylindrical if payload.cylindrical is not None else 0.0)
+
+        if cyl_val > 0:
+            sph_val = sph_val + cyl_val
+            cyl_val = -cyl_val
+
+        if sph_val < -6.00 or sph_val > 6.00:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Dioptria Esférica ({sph_val:+.2f}) fora do limite permitido para a grade Visão Simples LP (-6.00D a +6.00D)."
+            )
+
+        if cyl_val < -4.00 or cyl_val > 0.00:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Dioptria Cilíndrica ({cyl_val:.2f}) fora do limite permitido para a grade Visão Simples LP (0.00D a -4.00D)."
+            )
+
     # 1. Determina ou cria o modelo de lente
     model_id = payload.lens_model_id
     if not model_id:
@@ -106,10 +152,15 @@ async def register_fallback(
             material=payload.material,
             refractive_index=payload.refractive_index,
             treatment=payload.treatment,
-            diameter=payload.diameter
+            diameter=payload.diameter,
+            matrix_type=payload.matrix_type
         )
         if existing_model:
             model_id = existing_model.id
+            if payload.matrix_type and existing_model.matrix_type != payload.matrix_type:
+                existing_model.matrix_type = payload.matrix_type
+                db.add(existing_model)
+                await db.commit()
         else:
             # Cria novo modelo
             new_model_data = LensModelCreate(
@@ -118,51 +169,106 @@ async def register_fallback(
                 refractive_index=payload.refractive_index,
                 treatment=payload.treatment,
                 diameter=payload.diameter,
-                cost_price=payload.cost_price or Decimal("25.00")
+                matrix_type=payload.matrix_type or "LP_GRADE",
+                production_route=payload.production_route or "EXPRESSA_FACETAMENTO",
+                cost_price=payload.cost_price or Decimal("25.00"),
+                sale_price=payload.sale_price or Decimal("75.00"),
+                degree_threshold=payload.degree_threshold or Decimal("2.00"),
+                sale_price_over_threshold=payload.sale_price_over_threshold or Decimal("95.00")
             )
             new_model = await crud_lens.create_lens_model(db, new_model_data)
             model_id = new_model.id
 
-    # 2. Verifica se a dioptria (esférico/cilíndrico) já existe para esse modelo
+    # 2. Verifica se o código de barras já existe em alguma lente
+    by_barcode = await crud_lens.get_inventory_by_barcode(db, payload.barcode)
+    if by_barcode:
+        by_barcode.lens_model_id = model_id
+        by_barcode.spherical = payload.spherical
+        by_barcode.cylindrical = payload.cylindrical
+        by_barcode.location_tag = payload.location_tag if payload.location_tag else None
+        if payload.base_curve is not None:
+            by_barcode.base_curve = payload.base_curve
+        if payload.addition is not None:
+            by_barcode.addition = payload.addition
+        if payload.eye is not None:
+            by_barcode.eye = payload.eye
+            
+        cost_val = float(payload.cost_price) if payload.cost_price is not None else None
+        movement_in = StockMovementCreate(
+            lens_inventory_id=by_barcode.id,
+            movement_type="AUDIT",
+            quantity=payload.quantity_available,
+            reason="Atualização por Código de Barras e Ajuste de Estoque"
+        )
+        updated_movement = await crud_movement.create_stock_movement(db, movement_in, unit_cost=cost_val)
+        return updated_movement.lens_inventory
+
+    # 3. Verifica se a dioptria (esférico/cilíndrico) já existe para esse modelo
     inventory_item = await crud_lens.get_inventory_by_dioptria(
-        db, lens_model_id=model_id, spherical=payload.spherical, cylindrical=payload.cylindrical
+        db, 
+        lens_model_id=model_id, 
+        spherical=payload.spherical, 
+        cylindrical=payload.cylindrical,
+        base_curve=payload.base_curve,
+        addition=payload.addition,
+        eye=payload.eye
     )
     
+    cost_val = float(payload.cost_price) if payload.cost_price is not None else None
     if inventory_item:
-        # Se a dioptria já existia mas sem o barcode (ou outro barcode), atualiza o barcode
-        # e incrementa a quantidade
         inventory_item.barcode = payload.barcode
         inventory_item.location_tag = payload.location_tag if payload.location_tag else None
+        if payload.base_curve is not None:
+            inventory_item.base_curve = payload.base_curve
+        if payload.addition is not None:
+            inventory_item.addition = payload.addition
+        if payload.eye is not None:
+            inventory_item.eye = payload.eye
             
-        # Registra a movimentação de entrada/ajuste inicial
         movement_in = StockMovementCreate(
             lens_inventory_id=inventory_item.id,
             movement_type="AUDIT",
             quantity=payload.quantity_available,
             reason="Associação de Código de Barras e Ajuste de Estoque"
         )
-        updated_movement = await crud_movement.create_stock_movement(db, movement_in)
+        updated_movement = await crud_movement.create_stock_movement(db, movement_in, unit_cost=cost_val)
         return updated_movement.lens_inventory
     else:
-        # Cria a dioptria/item de inventário do zero
         new_inventory_data = LensInventoryGradeCreate(
             lens_model_id=model_id,
             spherical=payload.spherical,
             cylindrical=payload.cylindrical,
+            base_curve=payload.base_curve,
+            addition=payload.addition,
+            eye=payload.eye,
             barcode=payload.barcode,
-            quantity_available=0, # Inicia com 0 para a movimentação adicionar corretamente
+            quantity_available=0,
             location_tag=payload.location_tag
         )
         inventory_item = await crud_lens.create_inventory_item(db, new_inventory_data)
         
-        # Cria a movimentação inicial
         movement_in = StockMovementCreate(
             lens_inventory_id=inventory_item.id,
             movement_type="AUDIT",
             quantity=payload.quantity_available,
             reason="Inventário Inicial (Cadastro Fallback)"
         )
-        updated_movement = await crud_movement.create_stock_movement(db, movement_in)
+        updated_movement = await crud_movement.create_stock_movement(db, movement_in, unit_cost=cost_val)
+
+        # Sincroniza o SKU no produto correspondente no catálogo financeiro
+        if model_id and payload.barcode:
+            from backend.app.models.financial_catalog import Product
+            from sqlalchemy import select
+            p_query = select(Product).where(Product.lens_model_id == model_id)
+            p_result = await db.execute(p_query)
+            prod = p_result.scalar_one_or_none()
+            if prod and prod.sku != payload.barcode:
+                existing_sku = (await db.execute(select(Product).where(Product.sku == payload.barcode))).scalars().first()
+                if not existing_sku:
+                    prod.sku = payload.barcode
+                    db.add(prod)
+                    await db.commit()
+
         return updated_movement.lens_inventory
 
 @router.put("/{item_id}", response_model=LensInventoryGradeResponse)
@@ -216,11 +322,26 @@ async def update_inventory_item(
         updated_movement = await crud_movement.create_stock_movement(db, movement_in)
         return updated_movement.lens_inventory
     else:
-        # Se a quantidade não mudou, apenas salva os outros campos
-        db.add(inventory_item)
-        await db.commit()
-        await db.refresh(inventory_item)
         return inventory_item
+
+
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_inventory_item_endpoint(
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(get_current_active_operator)
+):
+    """
+    Remove uma dioptria/célula específica da grade de estoque de lentes.
+    """
+    success = await crud_lens.delete_inventory_item(db, item_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item de inventário não encontrado."
+        )
+    return
+
 
 
 

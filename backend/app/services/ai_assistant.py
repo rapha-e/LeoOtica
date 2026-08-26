@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,7 @@ from backend.app.models.lens import LensModel, LensInventoryGrade
 
 async def get_top_billing_stores(db: AsyncSession, limit: int = 5) -> List[Dict[str, Any]]:
     """Consulta no banco quais óticas mais faturaram (ciclos fechados nos últimos 30 dias)."""
-    limite_30_dias = datetime.utcnow() - timedelta(days=30)
+    limite_30_dias = datetime.now(timezone.utc) - timedelta(days=30)
     query = (
         select(
             OpticalStore.corporate_name.label("store_name"),
@@ -36,7 +36,7 @@ async def get_top_billing_stores(db: AsyncSession, limit: int = 5) -> List[Dict[
 
 async def get_top_consumed_lenses(db: AsyncSession, limit: int = 5) -> List[Dict[str, Any]]:
     """Consulta os modelos de lentes mais consumidos (saídas físicas nos últimos 30 dias)."""
-    limite_30_dias = datetime.utcnow() - timedelta(days=30)
+    limite_30_dias = datetime.now(timezone.utc) - timedelta(days=30)
     query = (
         select(
             LensModel.brand.label("brand"),
@@ -80,7 +80,7 @@ async def get_top_consumed_lenses(db: AsyncSession, limit: int = 5) -> List[Dict
 
 async def get_overdue_service_orders(db: AsyncSession, limit: int = 20) -> List[Dict[str, Any]]:
     """Consulta OSs ativas que estão na esteira há mais de 3 dias."""
-    limite_atraso = datetime.utcnow() - timedelta(days=3)
+    limite_atraso = datetime.now(timezone.utc) - timedelta(days=3)
     query = (
         select(
             ServiceOrder.os_number.label("os_number"),
@@ -132,7 +132,7 @@ async def get_unbilled_service_orders(db: AsyncSession) -> List[Dict[str, Any]]:
 
 async def get_morning_briefing(db: AsyncSession) -> Dict[str, Any]:
     """Gera o resumo situacional pró-ativo 'Bom Dia Executivo' para início de expediente."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     start_today = datetime(now.year, now.month, now.day)
     three_days_ago = now - timedelta(days=3)
 

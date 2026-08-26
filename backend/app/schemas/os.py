@@ -49,6 +49,7 @@ class ServiceOrderItemResponse(ServiceOrderItemBase):
     original_price: Optional[float] = None
     price_override_reason: Optional[str] = None
     name: Optional[str] = None
+    description: Optional[str] = None
     price: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -89,6 +90,14 @@ class ServiceOrderBase(BaseModel):
     status: str = Field("Recebida")
     os_type: Optional[str] = Field("PADRAO", max_length=30)
 
+    client_order_number: Optional[str] = Field(None, max_length=100)
+    tray_number: Optional[str] = Field(None, max_length=50)
+    priority: Optional[str] = Field("NORMAL", max_length=20)
+    service_type: Optional[str] = Field(None, max_length=100)
+    manual_price: Optional[float] = Field(None)
+    price_override_reason: Optional[str] = Field(None, max_length=255)
+    special_instructions: Optional[str] = Field(None)
+
     total_amount: float = 0.00
 
     clinical_notes: Optional[str] = Field(None, max_length=500)
@@ -122,6 +131,7 @@ class ServiceOrderCreate(BaseModel):
     os_number: Optional[str] = Field(None, max_length=50, description="Gerado automaticamente se não fornecido")
     client_name: Optional[str] = Field(None, max_length=150)
     doctor_name: Optional[str] = Field(None, max_length=150)
+    client_order_number: Optional[str] = Field(None, max_length=100, description="Número de controle interno da Ótica Cliente")
     partner_shop_id: Optional[uuid.UUID] = None
     optical_store_id: Optional[uuid.UUID] = None
     os_type: Optional[str] = "PADRAO"

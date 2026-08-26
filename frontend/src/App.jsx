@@ -4,6 +4,11 @@ import { Grid, FileUp, ShieldAlert, Smartphone, FileText, Activity, BarChart2, S
 import UsbScanner from './components/UsbScanner';
 import GradeOptica from './components/GradeOptica';
 import GradeBlocos from './components/GradeBlocos';
+import GradeLentes167 from './components/GradeLentes167';
+import GradeMultifocalAcabado from './components/GradeMultifocalAcabado';
+// App.jsx - Updated version for Unified Lens Register & Grade Filtering
+import UnifiedLensRegister from './components/UnifiedLensRegister';
+import MatrizVisaoSimples from './components/MatrizVisaoSimples';
 import XMLUpload from './components/XMLUpload';
 import DashboardAlerts from './components/DashboardAlerts';
 import FallbackModal from './components/FallbackModal';
@@ -22,14 +27,15 @@ import AssistenteIA from './components/AssistenteIA';
 import GerenciamentoUsuarios from './components/GerenciamentoUsuarios';
 import GlobalSearch from './components/GlobalSearch';
 import SmartMenuBar from './components/SmartMenu';
-import FinanceiroCorporativo from './components/FinanceiroCorporativo';
 import DashboardExecutivo from './components/DashboardExecutivo';
 import ParametrosSistema from './components/ParametrosSistema';
 import GestaoPedidosFornecedor from './components/GestaoPedidosFornecedor';
-import GestaoPedidosComerciais from './components/GestaoPedidosComerciais';
 import CentralAlertasFinanceiros from './components/CentralAlertasFinanceiros';
+import OSRegistrationForm from './components/OSRegistrationForm';
+import OSDetail from './components/OSDetail';
 
 import FilaOrdensBloqueadas from './components/FilaOrdensBloqueadas';
+import DashboardDRE from './components/DashboardDRE';
 import { TrendingUp, Sparkles, Users, ChevronDown, Plus, Wrench, Settings, Building2, BarChart3, Lock } from 'lucide-react';
 
 
@@ -37,6 +43,7 @@ import { TrendingUp, Sparkles, Users, ChevronDown, Plus, Wrench, Settings, Build
 
 function App() {
   const [activeTab, setActiveTab] = useState('grid');
+  const [selectedOSIdForModal, setSelectedOSIdForModal] = useState(null);
   const [toast, setToast] = useState(null);
 
 
@@ -260,6 +267,12 @@ function App() {
 
   const handleIneditoBarcode = (barcode, initialQty = 1) => {
     setFallbackData({ barcode, quantity: initialQty });
+    setActiveTab('unified-lens-register');
+  };
+
+  const handleOpenUnifiedRegister = (initialData = null) => {
+    setFallbackData(initialData || { barcode: '', quantity: 1 });
+    setActiveTab('unified-lens-register');
   };
 
   const handleFallbackSuccess = (newItem) => {
@@ -312,7 +325,12 @@ function App() {
             <span className="logo-badge">Fábrica</span>
           </div>
           {/* Pesquisa Global */}
-          <GlobalSearch onNavigate={(tab) => setActiveTab(tab)} />
+          <GlobalSearch onNavigate={(tab, result) => {
+            if (tab) setActiveTab(tab);
+            if (result && result.type === 'os' && result.id) {
+              setSelectedOSIdForModal(result.id);
+            }
+          }} />
         </div>
 
         <nav className="nav-tabs" style={{ gap: '15px', background: 'transparent', border: 'none', boxShadow: 'none', overflow: 'visible' }}>
@@ -328,7 +346,7 @@ function App() {
           <div className="header-dropdown">
             <button 
               type="button"
-              className={`dropdown-trigger ${['scanner', 'grid', 'grid-blocos', 'nfe', 'alerts', 'admin-lentes'].includes(activeTab) ? 'active' : ''}`}
+              className={`dropdown-trigger ${['scanner', 'grid', 'grid-blocos', 'grid-167', 'grid-multifocal-acabado', 'matriz-visao-simples', 'nfe', 'alerts', 'admin-lentes'].includes(activeTab) ? 'active' : ''}`}
               onClick={() => setOpenDropdown(openDropdown === 'estoque' ? null : 'estoque')}
             >
               <Layers size={16} /> Estoque & Grade <ChevronDown size={14} />
@@ -337,24 +355,45 @@ function App() {
               <div className="dropdown-menu">
                 <button 
                   type="button"
-                  className={`dropdown-item ${activeTab === 'scanner' ? 'active' : ''}`}
-                  onClick={() => { setActiveTab('scanner'); setOpenDropdown(null); }}
+                  className={`dropdown-item ${activeTab === 'unified-lens-register' || activeTab === 'scanner' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('unified-lens-register'); setOpenDropdown(null); }}
                 >
-                  <Keyboard size={14} /> Bipador USB
+                  <Plus size={14} style={{ color: 'hsl(var(--primary))' }} /> Cadastrador Unificado & Bipador USB
                 </button>
                 <button 
                   type="button"
                   className={`dropdown-item ${activeTab === 'grid' ? 'active' : ''}`}
                   onClick={() => { setActiveTab('grid'); setOpenDropdown(null); }}
                 >
-                  <Grid size={14} /> Grade de Lentes (Acabadas)
+                  <Grid size={14} /> Visão Simples LP
+                </button>
+                <button 
+                  type="button"
+                  className={`dropdown-item ${activeTab === 'grid-167' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('grid-167'); setOpenDropdown(null); }}
+                >
+                  <Sparkles size={14} style={{ color: '#a855f7' }} /> 1.67 Lentes Prontas
+                </button>
+                <button 
+                  type="button"
+                  className={`dropdown-item ${activeTab === 'grid-multifocal-acabado' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('grid-multifocal-acabado'); setOpenDropdown(null); }}
+                >
+                  <Sparkles size={14} style={{ color: '#06b6d4' }} /> Multifocal Acabado
                 </button>
                 <button 
                   type="button"
                   className={`dropdown-item ${activeTab === 'grid-blocos' ? 'active' : ''}`}
                   onClick={() => { setActiveTab('grid-blocos'); setOpenDropdown(null); }}
                 >
-                  <Layers size={14} /> Grade de Blocos (Semiacabados)
+                  <Layers size={14} /> Multifocal
+                </button>
+                <button 
+                  type="button"
+                  className={`dropdown-item ${activeTab === 'matriz-visao-simples' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('matriz-visao-simples'); setOpenDropdown(null); }}
+                >
+                  <Layers size={14} style={{ color: 'hsl(var(--secondary))' }} /> Bloco Visão Simples
                 </button>
                 <button 
                   type="button"
@@ -378,7 +417,7 @@ function App() {
           <div className="header-dropdown">
             <button 
               type="button"
-              className={`dropdown-trigger ${['os-upload', 'os-workflow', 'os-dashboard'].includes(activeTab) ? 'active' : ''}`}
+              className={`dropdown-trigger ${['os-upload', 'os-workflow', 'os-dashboard', 'os-factory-register', 'financial-blocked-orders'].includes(activeTab) ? 'active' : ''}`}
               onClick={() => setOpenDropdown(openDropdown === 'os' ? null : 'os')}
             >
               <Activity size={16} /> Bancada OS <ChevronDown size={14} />
@@ -387,10 +426,10 @@ function App() {
               <div className="dropdown-menu">
                 <button 
                   type="button"
-                  className={`dropdown-item ${activeTab === 'os-upload' ? 'active' : ''}`}
-                  onClick={() => { setActiveTab('os-upload'); setOpenDropdown(null); }}
+                  className={`dropdown-item ${activeTab === 'os-factory-register' || activeTab === 'os-upload' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('os-factory-register'); setOpenDropdown(null); }}
                 >
-                  <FileText size={14} /> Entrada OS
+                  <Plus size={14} style={{ color: 'hsl(var(--primary))' }} /> Nova OS de Fábrica (Com OCR & Manual)
                 </button>
                 <button 
                   type="button"
@@ -467,6 +506,14 @@ function App() {
                   onClick={() => { setActiveTab('dashboard-gerencial'); setOpenDropdown(null); }}
                 >
                   <TrendingUp size={14} /> Dashboard Gerencial
+                </button>
+
+                <button 
+                  type="button"
+                  className={`dropdown-item ${activeTab === 'dre-consolidado' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('dre-consolidado'); setOpenDropdown(null); }}
+                >
+                  <BarChart3 size={14} style={{ color: '#22c55e' }} /> DRE Consolidado
                 </button>
 
                 {currentUser.role === 'Administrador' && (
@@ -569,35 +616,38 @@ function App() {
               onInedito={(barcode) => handleIneditoBarcode(barcode, 1)} 
               onScanSuccess={(item) => console.log("Bipagem bem-sucedida:", item)}
             />
-
-            <button 
-              className="btn btn-secondary"
-              onClick={() => setFallbackData({ barcode: '', quantity: 1 })}
-              style={{ 
-                marginTop: '20px', 
-                width: '100%', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                gap: '8px',
-                padding: '12px'
-              }}
-            >
-              <Plus size={18} /> Inserir Lente Manualmente
-            </button>
           </div>
         )}
 
         {activeTab === 'grid' && (
           <GradeOptica 
-            onOpenManualInsert={(initialData) => {
-              setFallbackData(initialData || { barcode: '', quantity: 1 });
-            }}
+            onOpenManualInsert={(initialData) => handleOpenUnifiedRegister(initialData)}
+          />
+        )}
+
+        {activeTab === 'grid-167' && (
+          <GradeLentes167 
+            onOpenManualInsert={(initialData) => handleOpenUnifiedRegister({ ...(initialData || {}), matrixType: 'GRADE_167' })}
           />
         )}
 
         {activeTab === 'grid-blocos' && (
-          <GradeBlocos />
+          <GradeBlocos onOpenManualInsert={(initialData) => handleOpenUnifiedRegister({ ...(initialData || {}), matrixType: 'MF_BLOCO' })} />
+        )}
+
+        {activeTab === 'grid-multifocal-acabado' && (
+          <GradeMultifocalAcabado onOpenManualInsert={(initialData) => handleOpenUnifiedRegister({ ...(initialData || {}), matrixType: 'MF_ACB' })} />
+        )}
+
+        {activeTab === 'matriz-visao-simples' && (
+          <MatrizVisaoSimples onOpenManualInsert={(initialData) => handleOpenUnifiedRegister({ ...(initialData || {}), matrixType: 'BLOCO_VS' })} />
+        )}
+
+        {activeTab === 'unified-lens-register' && (
+          <UnifiedLensRegister 
+            initialData={fallbackData}
+            onComplete={() => setFallbackData(null)}
+          />
         )}
 
         {activeTab === 'nfe' && (
@@ -610,6 +660,10 @@ function App() {
 
         {activeTab === 'admin-lentes' && (
           <AdminLentes />
+        )}
+
+        {activeTab === 'os-factory-register' && (
+          <OSRegistrationForm onOSCreated={() => setActiveTab('os-workflow')} />
         )}
 
         {activeTab === 'os-upload' && (
@@ -629,7 +683,9 @@ function App() {
         )}
 
         {activeTab === 'catalog' && (
-          <CatalogoFinanceiro />
+          <CatalogoFinanceiro 
+            onOpenManualLensInsert={(initialData) => setFallbackData(initialData || { barcode: '', quantity: 1 })} 
+          />
         )}
 
         {activeTab === 'price-tables' && (
@@ -642,6 +698,10 @@ function App() {
         
         {activeTab === 'dashboard-gerencial' && (
           <DashboardGerencial onNavigate={(tab) => setActiveTab(tab)} />
+        )}
+
+        {activeTab === 'dre-consolidado' && (
+          <DashboardDRE />
         )}
 
         {['executive-dashboard', 'finance-corp'].includes(activeTab) && currentUser?.role === 'Administrador' && (
@@ -692,6 +752,8 @@ function App() {
           initialSpherical={fallbackData.spherical}
           initialCylindrical={fallbackData.cylindrical}
           initialLensModelId={fallbackData.lensModelId}
+          initialRefractiveIndex={fallbackData.refractiveIndex}
+          is167Mode={fallbackData.is167Mode || fallbackData.refractiveIndex === 1.67 || fallbackData.refractiveIndex === '1.67'}
           onClose={() => setFallbackData(null)}
           onSuccess={handleFallbackSuccess}
         />
@@ -798,6 +860,48 @@ function App() {
                 <button type="submit" className="btn btn-primary">Salvar Alterações</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Global de Detalhes da OS (Acionado via Busca Global ou seleção direta) */}
+      {selectedOSIdForModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+          onClick={() => setSelectedOSIdForModal(null)}
+        >
+          <div 
+            style={{
+              background: 'hsl(var(--card, 222 47% 11%))',
+              border: '1px solid var(--border-glass, rgba(255, 255, 255, 0.1))',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '900px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <OSDetail
+              osId={selectedOSIdForModal}
+              onClose={() => setSelectedOSIdForModal(null)}
+            />
           </div>
         </div>
       )}

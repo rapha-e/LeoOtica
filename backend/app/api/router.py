@@ -2,13 +2,17 @@ from fastapi import APIRouter, Depends
 from backend.app.api.endpoints import (
     lens_models, inventory, movements, nfe, alerts, os as endpoints_os, analytics as endpoints_analytics,
     partner, factory, auth, optical_stores, financial_catalog, customer_price, billing, users, laboratory,
-    search as endpoints_search, tv as endpoints_tv, backup, financial_corp, system_parameters, supplier_order, blocks, orders
+    search as endpoints_search, tv as endpoints_tv, backup, financial_corp, system_parameters, supplier_order, blocks, orders,
+    degree_policy
 )
 
 
 from backend.app.api.deps import get_current_active_operator, get_current_active_admin
 
 api_router = APIRouter()
+
+# Política Global de Precificação por Grau
+api_router.include_router(degree_policy.router, prefix="/degree-policy", tags=["Política Global de Precificação por Grau"])
 
 # Rotas públicas ou com autenticação específica por chaves
 api_router.include_router(auth.router, prefix="/auth", tags=["Autenticação"])

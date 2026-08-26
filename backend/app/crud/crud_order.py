@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, or_, and_, func
@@ -14,7 +14,7 @@ from backend.app.schemas.order import CommercialOrderCreate, CommercialOrderUpda
 
 async def generate_order_number(db: AsyncSession) -> str:
     """Gera um número sequencial único para o Pedido Comercial (ex: PED-2026-0001)."""
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
     prefix = f"PED-{current_year}-"
     
     query = select(func.count(CommercialOrder.id))
@@ -106,7 +106,7 @@ async def create_commercial_order(db: AsyncSession, data: CommercialOrderCreate)
         and_(
             AccountsReceivable.optical_store_id == data.optical_store_id,
             AccountsReceivable.status == "PENDENTE",
-            AccountsReceivable.due_date < datetime.utcnow()
+            AccountsReceivable.due_date < datetime.now(timezone.utc)
         )
     )
     overdue_res = await db.execute(overdue_query)
@@ -211,7 +211,7 @@ async def bill_commercial_order(db: AsyncSession, order_id: uuid.UUID) -> Option
             description=f"Faturamento Pedido Comercial {order.order_number} - {order.client_name}",
             amount=float(order.total_amount),
             amount_received=0.00,
-            due_date=datetime.utcnow() + timedelta(days=days_to_due),
+            due_date=datetime.now(timezone.utc) + timedelta(days=days_to_due),
             status="PENDENTE",
             notes=f"Gerado automaticamente pelo faturamento do pedido {order.order_number}"
         )

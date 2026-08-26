@@ -11,30 +11,147 @@ from backend.app.schemas.lens import LensModelCreate, LensInventoryGradeCreate, 
 
 async def create_lens_model(db: AsyncSession, obj_in: LensModelCreate) -> LensModel:
     from backend.app.models.financial_catalog import Product, PriceHistory
-    from datetime import datetime
+    from backend.app.crud.degree_policy import get_active_policy
+    from backend.app.crud.crud_system_parameters import get_all_parameters, get_preset_key_for_lens
+    from datetime import datetime, timezone
+    from fastapi import HTTPException, status
 
-    db_obj = LensModel(
+    code_in = getattr(obj_in, "code", None)
+    
+    # 0. Verifica se já existe um modelo com o mesmo código de barras ou atributos principais
+    if code_in:
+        model_by_code = (await db.execute(select(LensModel).where(LensModel.code == code_in))).scalars().first()
+        if model_by_code:
+            if (model_by_code.brand == obj_in.brand and 
+                model_by_code.treatment == obj_in.treatment and 
+                model_by_code.refractive_index == obj_in.refractive_index and 
+                model_by_code.diameter == obj_in.diameter):
+                return model_by_code
+            else:
+                # O código de barras pertence a outro modelo comercial; limpa o campo `code` do modelo para evitar violação UNIQUE em lens_models.code
+                code_in = None
+
+    existing_model = await get_lens_model_by_attributes(
+        db,
         brand=obj_in.brand,
         material=obj_in.material,
         refractive_index=obj_in.refractive_index,
         treatment=obj_in.treatment,
         diameter=obj_in.diameter,
+        matrix_type=getattr(obj_in, "matrix_type", None)
+    )
+    
+    if existing_model:
+        # Atualiza o código de barras no modelo se informado
+        if code_in and not existing_model.code:
+            existing_model.code = code_in
+            db.add(existing_model)
+
+        # Garante que o Product correspondente no catálogo financeiro existe e está atualizado
+        p_query = select(Product).where(Product.lens_model_id == existing_model.id)
+        p_result = await db.execute(p_query)
+        prod = p_result.scalar_one_or_none()
+        
+        if prod:
+            if code_in and (not prod.sku or prod.sku.startswith("L-")):
+                prod.sku = code_in
+            if obj_in.cost_price is not None:
+                prod.cost_price = float(obj_in.cost_price)
+            if obj_in.sale_price is not None:
+                prod.sale_price = float(obj_in.sale_price)
+            db.add(prod)
+        else:
+            # Cria o Product se porventura não existia
+            idx_str = f"{existing_model.refractive_index:.2f}"
+            name_parts = ["Lente", (existing_model.brand or "").strip(), (existing_model.treatment or "").strip(), idx_str]
+            prod_name = " ".join(part for part in name_parts if part)
+            sku_code = code_in or f"L-{(existing_model.brand or 'LNT')[:3].upper()}-{(existing_model.treatment or 'INC')[:3].upper()}-{str(existing_model.id)[:4].upper()}"
+            new_p = Product(
+                name=prod_name,
+                description=f"Lente física de estoque. Material: {existing_model.material}.",
+                sku=sku_code,
+                cost_price=float(existing_model.cost_price),
+                sale_price=float(existing_model.sale_price),
+                is_active=True,
+                is_lens=True,
+                brand=existing_model.brand,
+                material=existing_model.material,
+                refractive_index=float(existing_model.refractive_index),
+                treatment=existing_model.treatment,
+                diameter=existing_model.diameter,
+                lens_model_id=existing_model.id,
+                current_version=1
+            )
+            db.add(new_p)
+
+        await db.commit()
+        await db.refresh(existing_model)
+        return existing_model
+
+    sys_params = await get_all_parameters(db)
+    policy = await get_active_policy(db)
+    
+    pk = get_preset_key_for_lens(
+        brand=obj_in.brand,
+        name=getattr(obj_in, "name", None),
+        refractive_index=obj_in.refractive_index,
+        treatment=obj_in.treatment,
+        material=obj_in.material
+    )
+
+    sys_base = sys_params.get(f"{pk}_price_base") if pk else None
+    sys_over = sys_params.get(f"{pk}_price_over") if pk else None
+    sys_thresh = sys_params.get(f"{pk}_cyl_threshold") if pk else None
+
+    default_base = Decimal(str(sys_base)) if sys_base else (policy.default_sale_price_le if policy else Decimal("75.00"))
+    default_over = Decimal(str(sys_over)) if sys_over else (policy.default_sale_price_gt if policy else Decimal("95.00"))
+    default_thresh = Decimal(str(sys_thresh)) if sys_thresh else (policy.degree_threshold if policy else Decimal("2.00"))
+
+    is_generic_price = (obj_in.sale_price is None or obj_in.sale_price == Decimal("75.00"))
+    is_generic_over = (obj_in.sale_price_over_threshold is None or obj_in.sale_price_over_threshold == Decimal("95.00"))
+    is_generic_thresh = (obj_in.degree_threshold is None or obj_in.degree_threshold == Decimal("2.00"))
+
+    sale_le = obj_in.sale_price if (not is_generic_price and obj_in.sale_price is not None) else default_base
+    sale_gt = obj_in.sale_price_over_threshold if (not is_generic_over and obj_in.sale_price_over_threshold is not None) else default_over
+    deg_threshold = obj_in.degree_threshold if (not is_generic_thresh and obj_in.degree_threshold is not None) else default_thresh
+
+    db_obj = LensModel(
+        code=code_in,
+        name=getattr(obj_in, "name", None) or obj_in.brand,
+        brand=obj_in.brand,
+        material=obj_in.material,
+        refractive_index=obj_in.refractive_index,
+        treatment=obj_in.treatment,
+        diameter=obj_in.diameter,
+        matrix_type=getattr(obj_in, "matrix_type", None) or "LP_GRADE",
+        production_route=getattr(obj_in, "production_route", None) or "EXPRESSA_FACETAMENTO",
         cost_price=obj_in.cost_price,
-        sale_price=obj_in.sale_price
+        sale_price=sale_le,
+        degree_threshold=deg_threshold,
+        sale_price_over_threshold=sale_gt
     )
     db.add(db_obj)
     await db.flush()  # Gera o id do LensModel no banco
     
     # Cria o correspondente Product faturável no catálogo comercial
     idx_str = f"{db_obj.refractive_index:.2f}"
-    name_parts = ["Lente", db_obj.brand.strip(), db_obj.treatment.strip(), idx_str]
+    brand_val = (db_obj.brand or "").strip()
+    treat_val = (db_obj.treatment or "").strip()
+    name_parts = ["Lente", brand_val, treat_val, idx_str]
     prod_name = " ".join(part for part in name_parts if part)
     
-    brand_slug = db_obj.brand[:3].upper() if db_obj.brand else "LNT"
-    treat_slug = db_obj.treatment[:3].upper() if db_obj.treatment else "INC"
+    code_in = getattr(obj_in, "code", None)
+    brand_slug = brand_val[:3].upper() if brand_val else "LNT"
+    treat_slug = treat_val[:3].upper() if treat_val else "INC"
     idx_slug = idx_str.replace(".", "")
     rand_id = str(db_obj.id)[:4].upper()
-    sku_code = f"L-{brand_slug}-{treat_slug}-{idx_slug}-{rand_id}"
+    default_sku = f"L-{brand_slug}-{treat_slug}-{idx_slug}-{rand_id}"
+
+    sku_code = default_sku
+    if code_in:
+        existing_sku = (await db.execute(select(Product).where(Product.sku == code_in))).scalars().first()
+        if not existing_sku:
+            sku_code = code_in
     
     new_prod = Product(
         name=prod_name,
@@ -62,7 +179,7 @@ async def create_lens_model(db: AsyncSession, obj_in: LensModelCreate) -> LensMo
         price=new_prod.sale_price,
         cost_price=new_prod.cost_price,
         version=1,
-        start_date=datetime.utcnow(),
+        start_date=datetime.now(timezone.utc),
         change_reason="Cadastro de lente (unificacao)"
     )
     db.add(price_hist)
@@ -83,7 +200,7 @@ async def get_lens_model(db: AsyncSession, model_id: uuid.UUID) -> Optional[Lens
 
 async def update_lens_model(db: AsyncSession, model_id: uuid.UUID, obj_in: LensModelUpdate) -> Optional[LensModel]:
     from backend.app.models.financial_catalog import Product, PriceHistory
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     db_obj = await get_lens_model(db, model_id)
     if not db_obj:
@@ -101,7 +218,7 @@ async def update_lens_model(db: AsyncSession, model_id: uuid.UUID, obj_in: LensM
     
     if prod:
         idx_str = f"{db_obj.refractive_index:.2f}"
-        name_parts = ["Lente", db_obj.brand.strip(), db_obj.treatment.strip(), idx_str]
+        name_parts = ["Lente", (db_obj.brand or "").strip(), (db_obj.treatment or "").strip(), idx_str]
         prod.name = " ".join(part for part in name_parts if part)
         prod.cost_price = float(db_obj.cost_price)
         
@@ -118,7 +235,7 @@ async def update_lens_model(db: AsyncSession, model_id: uuid.UUID, obj_in: LensM
                 price=prod.sale_price,
                 cost_price=prod.cost_price,
                 version=prod.current_version,
-                start_date=datetime.utcnow(),
+                start_date=datetime.now(timezone.utc),
                 change_reason="Atualizacao de preco da lente (unificacao)"
             )
             db.add(price_hist)
@@ -130,36 +247,72 @@ async def update_lens_model(db: AsyncSession, model_id: uuid.UUID, obj_in: LensM
     return db_obj
 
 async def delete_lens_model(db: AsyncSession, model_id: uuid.UUID) -> bool:
-    from backend.app.models.financial_catalog import Product
+    from backend.app.models.financial_catalog import Product, PriceHistory
+    from backend.app.models.lens import LensInventoryGrade, DegreePricingPolicyRange
+    from sqlalchemy import delete, and_
 
     db_obj = await get_lens_model(db, model_id)
     if not db_obj:
         return False
         
-    # Remove o correspondente Product comercial do catálogo
+    # 1. Remove os correspondentes Products comerciais do catálogo e seus históricos de preço
     p_query = select(Product).where(Product.lens_model_id == db_obj.id)
     p_result = await db.execute(p_query)
-    prod = p_result.scalar_one_or_none()
-    if prod:
+    prods = p_result.scalars().all()
+    for prod in prods:
+        await db.execute(
+            delete(PriceHistory).where(
+                and_(
+                    PriceHistory.entity_type == "product",
+                    PriceHistory.entity_id == prod.id
+                )
+            )
+        )
         await db.delete(prod)
         
+    # 2. Deleta explicitamente a grade de estoque (dioptrias/itens) vinculada a esta lente
+    await db.execute(delete(LensInventoryGrade).where(LensInventoryGrade.lens_model_id == db_obj.id))
+
+    # 3. Deleta políticas de preço por grau vinculadas
+    await db.execute(delete(DegreePricingPolicyRange).where(DegreePricingPolicyRange.lens_model_id == db_obj.id))
+
+    # 4. Remove o modelo da lente
     await db.delete(db_obj)
     await db.commit()
     return True
 
+async def delete_inventory_item(db: AsyncSession, item_id: uuid.UUID) -> bool:
+    inventory_item = await get_inventory_item(db, item_id)
+    if not inventory_item:
+        return False
+    await db.delete(inventory_item)
+    await db.commit()
+    return True
+
 async def get_lens_model_by_attributes(
-    db: AsyncSession, brand: str, material: str, refractive_index: Decimal, treatment: str, diameter: int
+    db: AsyncSession, brand: Optional[str] = None, material: Optional[str] = None, refractive_index: Optional[Decimal] = None, treatment: Optional[str] = None, diameter: Optional[int] = None, matrix_type: Optional[str] = None
 ) -> Optional[LensModel]:
     from sqlalchemy import func
-    query = select(LensModel).where(
-        func.lower(LensModel.brand) == func.lower(brand.strip()),
-        func.lower(LensModel.material) == func.lower(material.strip()),
-        LensModel.refractive_index == refractive_index,
-        func.lower(LensModel.treatment) == func.lower(treatment.strip()),
-        LensModel.diameter == diameter
-    )
+    filters = []
+    if brand:
+        filters.append(func.lower(LensModel.brand) == func.lower(brand.strip()))
+    if material:
+        filters.append(func.lower(LensModel.material) == func.lower(material.strip()))
+    if refractive_index is not None:
+        filters.append(LensModel.refractive_index == refractive_index)
+    if treatment:
+        filters.append(func.lower(LensModel.treatment) == func.lower(treatment.strip()))
+    if diameter is not None:
+        filters.append(LensModel.diameter == diameter)
+    if matrix_type:
+        filters.append(LensModel.matrix_type == matrix_type)
+        
+    if not filters:
+        return None
+        
+    query = select(LensModel).where(*filters)
     result = await db.execute(query)
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 # --- LENS INVENTORY GRADE CRUD ---
@@ -167,24 +320,53 @@ async def get_lens_model_by_attributes(
 async def get_inventory_by_barcode(db: AsyncSession, barcode: str) -> Optional[LensInventoryGrade]:
     query = select(LensInventoryGrade).where(LensInventoryGrade.barcode == barcode).options(selectinload(LensInventoryGrade.lens_model))
     result = await db.execute(query)
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 async def get_inventory_by_dioptria(
-    db: AsyncSession, lens_model_id: uuid.UUID, spherical: Decimal, cylindrical: Decimal
+    db: AsyncSession, 
+    lens_model_id: uuid.UUID, 
+    spherical: Optional[Decimal] = Decimal("0.00"), 
+    cylindrical: Optional[Decimal] = Decimal("0.00"),
+    base_curve: Optional[Decimal] = None,
+    addition: Optional[Decimal] = None,
+    eye: Optional[str] = None
 ) -> Optional[LensInventoryGrade]:
     query = select(LensInventoryGrade).where(
-        LensInventoryGrade.lens_model_id == lens_model_id,
-        LensInventoryGrade.spherical == spherical,
-        LensInventoryGrade.cylindrical == cylindrical
-    ).options(selectinload(LensInventoryGrade.lens_model))
+        LensInventoryGrade.lens_model_id == lens_model_id
+    )
+    
+    # Se for multifocal ou bloco (possui base_curve, addition ou eye)
+    if base_curve is not None or addition is not None or eye is not None:
+        if base_curve is not None:
+            query = query.where(LensInventoryGrade.base_curve == base_curve)
+        if addition is not None:
+            query = query.where(LensInventoryGrade.addition == addition)
+        if eye is not None:
+            query = query.where(LensInventoryGrade.eye == eye)
+    else:
+        # Lentes padrão de grade esférico/cilíndrico (LP_GRADE / GRADE_167)
+        if spherical is not None:
+            query = query.where(LensInventoryGrade.spherical == spherical)
+        else:
+            query = query.where(LensInventoryGrade.spherical.is_(None))
+
+        if cylindrical is not None:
+            query = query.where(LensInventoryGrade.cylindrical == cylindrical)
+        else:
+            query = query.where(LensInventoryGrade.cylindrical.is_(None))
+
+    query = query.options(selectinload(LensInventoryGrade.lens_model))
     result = await db.execute(query)
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 async def create_inventory_item(db: AsyncSession, obj_in: LensInventoryGradeCreate) -> LensInventoryGrade:
     db_obj = LensInventoryGrade(
         lens_model_id=obj_in.lens_model_id,
         spherical=obj_in.spherical,
         cylindrical=obj_in.cylindrical,
+        base_curve=getattr(obj_in, "base_curve", None),
+        addition=getattr(obj_in, "addition", None),
+        eye=getattr(obj_in, "eye", None),
         barcode=obj_in.barcode,
         quantity_available=obj_in.quantity_available,
         location_tag=obj_in.location_tag
@@ -198,10 +380,16 @@ async def create_inventory_item(db: AsyncSession, obj_in: LensInventoryGradeCrea
     result = await db.execute(query)
     return result.scalar_one()
 
-async def get_inventory_grid(db: AsyncSession, lens_model_id: Optional[uuid.UUID] = None) -> List[LensInventoryGrade]:
-    query = select(LensInventoryGrade).options(selectinload(LensInventoryGrade.lens_model))
+async def get_inventory_grid(
+    db: AsyncSession, 
+    lens_model_id: Optional[uuid.UUID] = None,
+    matrix_type: Optional[str] = None
+) -> List[LensInventoryGrade]:
+    query = select(LensInventoryGrade).join(LensModel, LensInventoryGrade.lens_model_id == LensModel.id).options(selectinload(LensInventoryGrade.lens_model))
     if lens_model_id is not None:
         query = query.where(LensInventoryGrade.lens_model_id == lens_model_id)
+    if matrix_type is not None:
+        query = query.where(LensModel.matrix_type == matrix_type)
     result = await db.execute(query)
     return list(result.scalars().all())
 

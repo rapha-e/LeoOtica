@@ -1,6 +1,7 @@
+// GradeOptica.jsx - Dynamic Grid View for Visão Simples LP
 import React, { useEffect, useState } from 'react';
-import { LensService, InventoryService } from '../services/api';
-import { ShieldAlert, MapPin, Eye, EyeOff, Search, Layers, Edit, Save, Plus, Minus, BarChart2, ShieldCheck, FileText } from 'lucide-react';
+import { LensService, InventoryService, DegreePolicyService } from '../services/api';
+import { ShieldAlert, MapPin, Eye, EyeOff, Search, Layers, Edit, Save, Plus, Minus, BarChart2, ShieldCheck, FileText, DollarSign } from 'lucide-react';
 
 const GradeOptica = ({ onOpenManualInsert }) => {
 
@@ -9,6 +10,7 @@ const GradeOptica = ({ onOpenManualInsert }) => {
   const [gridData, setGridData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedCell, setSelectedCell] = useState(null);
+  const [activePolicy, setActivePolicy] = useState(null);
   
   // Estados para edição manual
 
@@ -28,24 +30,27 @@ const GradeOptica = ({ onOpenManualInsert }) => {
   const [filterTreatment, setFilterTreatment] = useState('');
   const [showRuptureAlertModal, setShowRuptureAlertModal] = useState(false);
 
-
-  
   // Controle de exibição da grade inteira ou apenas área útil
   const [showFullRange, setShowFullRange] = useState(true);
 
-  useEffect(() => {
-    loadModels();
-  }, []);
-
-  useEffect(() => {
-    loadGrid(selectedModelId);
-  }, [selectedModelId]);
+  const loadPolicy = async () => {
+    try {
+      const res = await DegreePolicyService.getPolicy();
+      if (res.data && res.data.is_active) {
+        setActivePolicy(res.data);
+      }
+    } catch (err) {
+      console.warn("Erro ao carregar política de grau no GradeOptica:", err);
+    }
+  };
 
   const loadModels = async () => {
     try {
       const response = await LensService.getModels();
-      setModels(response.data);
-      // Inicia com "" para carregar todas as marcas e modelos por padrão
+      const lpModels = (response.data || []).filter(
+        m => m.matrix_type === 'LP_GRADE' || !m.matrix_type
+      );
+      setModels(lpModels);
       setSelectedModelId('');
     } catch (err) {
       console.error("Erro ao carregar modelos:", err);
@@ -55,9 +60,8 @@ const GradeOptica = ({ onOpenManualInsert }) => {
   const loadGrid = async (modelId) => {
     setLoading(true);
     try {
-      const response = await InventoryService.getGrid(modelId);
-      // Transpõe dinamicamente registros que porventura possuam cilíndrico positivo no banco para cilíndrico negativo
-      const transposedData = response.data.map(item => {
+      const response = await InventoryService.getGrid(modelId || null);
+      const transposedData = (response.data || []).map(item => {
         const cyl = parseFloat(item.cylindrical);
         if (cyl > 0) {
           const sph = parseFloat(item.spherical);
@@ -69,7 +73,18 @@ const GradeOptica = ({ onOpenManualInsert }) => {
         }
         return item;
       });
-      setGridData(transposedData);
+
+      const finalGrid = transposedData.filter(item => {
+        const mType = item.lens_model?.matrix_type;
+        if (mType) {
+          if (mType !== 'LP_GRADE') return false;
+        } else {
+          if (parseFloat(item.lens_model?.refractive_index) === 1.67) return false;
+        }
+        if (modelId && String(item.lens_model_id || item.lens_model?.id) !== String(modelId)) return false;
+        return true;
+      });
+      setGridData(finalGrid);
     } catch (err) {
       console.error("Erro ao carregar grade:", err);
     } finally {
@@ -77,78 +92,114 @@ const GradeOptica = ({ onOpenManualInsert }) => {
     }
   };
 
-  // Faixa de dioptrias padrão
-  // Esférico: +4.00 a -6.00
-  // Cilíndrico: -4.00 a 0.00
+  const getDiopterPriceInfo = (spherical, cylindrical, lensModel, policy) => {
+    let sph = parseFloat(spherical) || 0.0;
+    let cyl = parseFloat(cylindrical) || 0.0;
+
+    if (cyl > 0) {
+      sph = sph + cyl;
+      cyl = -cyl;
+    }
+
+    const absSph = Math.abs(sph);
+    const absCyl = Math.abs(cyl);
+
+    const threshold = lensModel?.degree_threshold 
+      ? parseFloat(lensModel.degree_threshold) 
+      : policy?.degree_threshold 
+        ? parseFloat(policy.degree_threshold) 
+        : 2.00;
+
+    const priceBase = lensModel?.sale_price 
+      ? parseFloat(lensModel.sale_price) 
+      : policy?.default_sale_price_le 
+        ? parseFloat(policy.default_sale_price_le) 
+        : 75.00;
+
+    const priceOver = lensModel?.sale_price_over_threshold 
+      ? parseFloat(lensModel.sale_price_over_threshold) 
+      : policy?.default_sale_price_gt 
+        ? parseFloat(policy.default_sale_price_gt) 
+        : 95.00;
+
+    const isOver = absSph > 4.00 || absCyl > threshold;
+    const finalPrice = isOver ? priceOver : priceBase;
+
+    return {
+      sph,
+      cyl,
+      absSph,
+      absCyl,
+      threshold,
+      isOver,
+      finalPrice,
+      priceBase,
+      priceOver,
+      label: isOver ? "Grau Alto / Sobretaxa" : "Grau Padrão"
+    };
+  };
+
+  useEffect(() => {
+    loadModels();
+    loadPolicy();
+  }, []);
+
+  useEffect(() => {
+    loadGrid(selectedModelId);
+  }, [selectedModelId]);
+
+  // Faixa de dioptrias padrão para Visão Simples LP (Esférico -6.00 a +6.00 / Cilíndrico 0.00 a -4.00)
   const getDefaultRanges = () => {
     let sphs = [];
     let cyls = [];
 
-    if (showFullRange) {
-      // Grade Completa
-      if (signFilter === 'positive') {
-        // Esférico positiva: de 0.00 a +4.00 (passo +0.25)
-        for (let s = 0; s <= 400; s += 25) sphs.push(s / 100);
-      } else {
-        // Esférico negativa: de 0.00 a -6.00 (passo -0.25)
-        for (let s = 0; s >= -600; s -= 25) sphs.push(s / 100);
+    if (signFilter === 'positive') {
+      // Positivas: 0.00 a +6.00 (passo +0.25)
+      for (let s = 0; s <= 600; s += 25) {
+        sphs.push(s / 100);
       }
-      // Cilíndrico completa: de 0.00 a -4.00 (passo -0.25)
-      for (let c = 0; c >= -400; c -= 25) cyls.push(c / 100);
     } else {
-      // Grade Compacta Inteligente (Área útil baseada nos dados existentes + margem)
-      if (gridData.length === 0) {
-        // Fallback
-        if (signFilter === 'positive') {
-          for (let s = 0; s <= 400; s += 25) sphs.push(s / 100);
-        } else {
-          for (let s = 0; s >= -600; s -= 25) sphs.push(s / 100);
-        }
-        for (let c = 0; c >= -400; c -= 25) cyls.push(c / 100);
-      } else {
-        const sphValues = gridData.map(d => parseFloat(d.spherical));
-        const cylValues = gridData.map(d => parseFloat(d.cylindrical));
-        
-        if (signFilter === 'positive') {
-          const maxSph = Math.max(...sphValues.filter(s => s >= 0), 1.0) + 0.5;
-          const limitSph = Math.min(Math.round(maxSph * 100), 400);
-          for (let s = 0; s <= limitSph; s += 25) sphs.push(s / 100);
-        } else {
-          const minSph = Math.min(...sphValues.filter(s => s <= 0), -3.0) - 0.5;
-          const limitSph = Math.max(Math.round(minSph * 100), -600);
-          for (let s = 0; s >= limitSph; s -= 25) sphs.push(s / 100);
-        }
-        
-        const minCyl = Math.min(...cylValues, -2.0) - 0.5;
-        const limitCyl = Math.max(Math.round(minCyl * 100), -400);
-        for (let c = 0; c >= limitCyl; c -= 25) cyls.push(c / 100);
+      // Negativas: 0.00 a -6.00 (passo -0.25)
+      for (let s = 0; s >= -600; s -= 25) {
+        sphs.push(s / 100);
       }
     }
+
+    // Cilíndrico: 0.00 a -4.00 (passo -0.25)
+    for (let c = 0; c >= -400; c -= 25) {
+      cyls.push(c / 100);
+    }
+
     return { sphs, cyls };
   };
 
   const { sphs, cyls } = getDefaultRanges();
 
+  const [filterMatrix, setFilterMatrix] = useState('');
+
   // Mapeia os dados do banco para busca rápida por dioptria
   const getCellData = (sph, cyl) => {
-    let matchingItems = gridData.filter(
-      item => Math.abs(parseFloat(item.spherical) - sph) < 0.01 && 
-              Math.abs(parseFloat(item.cylindrical) - cyl) < 0.01
-    );
+    let matchingItems = gridData.filter(item => {
+      const mType = item.lens_model?.matrix_type;
+      if (mType && mType !== 'LP_GRADE') return false;
+      return Math.abs(parseFloat(item.spherical) - sph) < 0.01 && 
+             Math.abs(parseFloat(item.cylindrical) - cyl) < 0.01;
+    });
 
     if (filterTreatment) {
       const targetLower = filterTreatment.trim().toLowerCase();
       matchingItems = matchingItems.filter(item => {
-        const itemTreatment = (item.lens_model?.treatment || '').trim().toLowerCase();
-        return itemTreatment === targetLower || itemTreatment.includes(targetLower);
+        const itemTreatment = (item.lens_model?.treatment || item.treatment || '').trim().toLowerCase();
+        return itemTreatment === targetLower;
       });
     }
 
     if (matchingItems.length === 0) return null;
     
-    // Se temos um modelo específico selecionado, retornamos apenas o item correspondente
+    // Se temos um modelo específico selecionado, retornamos o item exato daquele modelo
     if (selectedModelId) {
-      return matchingItems[0];
+      const exactMatch = matchingItems.find(i => String(i.lens_model_id) === String(selectedModelId));
+      return exactMatch || matchingItems[0];
     }
     
     // Senão, consolidamos
@@ -264,11 +315,21 @@ const GradeOptica = ({ onOpenManualInsert }) => {
 
   const selectedModel = models.find(m => m.id.toString() === selectedModelId);
 
-  // Lista deduplicada case-insensitive de tratamentos
+  // Lista deduplicada case-insensitive de tratamentos (buscando em modelos e itens de estoque)
   const uniqueTreatmentsMap = new Map();
   models.forEach(m => {
     if (m.treatment && m.treatment.trim()) {
       const raw = m.treatment.trim();
+      const key = raw.toLowerCase();
+      if (!uniqueTreatmentsMap.has(key)) {
+        uniqueTreatmentsMap.set(key, raw);
+      }
+    }
+  });
+  gridData.forEach(item => {
+    const treat = item.lens_model?.treatment || item.treatment;
+    if (treat && treat.trim()) {
+      const raw = treat.trim();
       const key = raw.toLowerCase();
       if (!uniqueTreatmentsMap.has(key)) {
         uniqueTreatmentsMap.set(key, raw);
@@ -382,7 +443,7 @@ const GradeOptica = ({ onOpenManualInsert }) => {
     <div className="glass-panel" style={{ width: '100%' }}>
       <div className="page-header" style={{ marginBottom: '24px', alignItems: 'center' }}>
         <div>
-          <h1 className="page-title">Matriz de Lentes (Grade Óptica)</h1>
+          <h1 className="page-title">Visão Simples LP</h1>
           <p className="page-subtitle">Visualize e pesquise a quantidade e localização física de cada lente no estoque.</p>
         </div>
 
@@ -395,18 +456,6 @@ const GradeOptica = ({ onOpenManualInsert }) => {
           >
             <FileText size={16} />
             Exportar PDF
-          </button>
-          <button 
-            className="btn btn-primary btn-sm" 
-            onClick={() => {
-              if (onOpenManualInsert) {
-                onOpenManualInsert({ barcode: '', quantity: 1, lensModelId: selectedModelId });
-              }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} />
-            Inserir Lente Manualmente
           </button>
           <button 
             className="btn btn-secondary btn-sm" 
@@ -434,6 +483,37 @@ const GradeOptica = ({ onOpenManualInsert }) => {
         </div>
       )}
 
+      {/* Banner de Política Global de Precificação por Grau */}
+      {activePolicy && (
+        <div style={{ 
+          background: 'rgba(59,130,246,0.08)', 
+          border: '1px solid rgba(59,130,246,0.3)', 
+          borderRadius: '12px', 
+          padding: '14px 18px', 
+          marginBottom: '20px', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          flexWrap: 'wrap', 
+          gap: '12px' 
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <DollarSign size={22} style={{ color: '#2563eb' }} />
+            <div>
+              <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#1e40af', fontWeight: 700 }}>
+                Política Global de Precificação por Grau (Visão Simples LP)
+              </h4>
+              <p style={{ margin: '2px 0 0 0', fontSize: '0.82rem', color: '#3b82f6' }}>
+                Lentes até ≤ 4.00D ESF e ≤ {parseFloat(activePolicy.degree_threshold || 2).toFixed(2)}D CIL: <strong>R$ {parseFloat(activePolicy.default_sale_price_le || 75).toFixed(2)}</strong> | Acima do limite: <strong>R$ {parseFloat(activePolicy.default_sale_price_gt || 95).toFixed(2)}</strong>
+              </p>
+            </div>
+          </div>
+          <span className="badge badge-info" style={{ fontWeight: 700, padding: '6px 12px', fontSize: '0.8rem' }}>
+            Limite de Corte: {parseFloat(activePolicy.degree_threshold || 2).toFixed(2)} D CIL
+          </span>
+        </div>
+      )}
+
       {/* Busca por Graus & Tratamento */}
       <div style={{ marginBottom: '24px', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div className="form-group" style={{ flex: 1, minWidth: '280px' }}>
@@ -458,7 +538,7 @@ const GradeOptica = ({ onOpenManualInsert }) => {
           </div>
         </div>
 
-        <div className="form-group" style={{ flex: 1, minWidth: '240px' }}>
+        <div className="form-group" style={{ flex: 1, minWidth: '220px' }}>
           <label className="form-label">Filtrar por Tratamento</label>
           <select
             className="form-control"
@@ -483,7 +563,7 @@ const GradeOptica = ({ onOpenManualInsert }) => {
         </div>
       ) : (
         <div>
-          {/* Alternador de Grade Positiva / Negativa */}
+          {/* Alternador de Grade: Lentes Negativas (-) / Lentes Positivas (+) */}
           <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', background: 'rgba(255,255,255,0.03)', padding: '6px', borderRadius: '10px' }}>
             <button
               type="button"
@@ -491,7 +571,7 @@ const GradeOptica = ({ onOpenManualInsert }) => {
               onClick={() => setSignFilter('negative')}
               style={{ flex: 1, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold' }}
             >
-              Lentes Negativas (-)
+              Lentes Negativas (-) [{gridData.filter(i => parseFloat(i.spherical) <= 0).length}]
             </button>
             <button
               type="button"
@@ -499,12 +579,12 @@ const GradeOptica = ({ onOpenManualInsert }) => {
               onClick={() => setSignFilter('positive')}
               style={{ flex: 1, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold' }}
             >
-              Lentes Positivas (+)
+              Lentes Positivas (+) [{gridData.filter(i => parseFloat(i.spherical) > 0).length}]
             </button>
           </div>
 
-          <div className="grid-container">
-            <table className="optical-grid">
+          <div className="grid-container no-scroll">
+            <table className="optical-grid fit-grid-table">
             <thead>
               <tr>
                 <th style={{ width: '100px', position: 'sticky', left: 0, zIndex: 10, background: 'hsl(var(--bg-card))' }}>
@@ -579,6 +659,51 @@ const GradeOptica = ({ onOpenManualInsert }) => {
                 </strong>
               </div>
             </div>
+
+            {/* Card de Precificação Calculada por Grau */}
+            {(() => {
+              const modelObj = models.find(m => String(m.id) === String(selectedModelId)) || 
+                               selectedCell.item?.lens_model || 
+                               selectedCell.item?.items?.[0]?.lens_model;
+              const priceInfo = getDiopterPriceInfo(selectedCell.spherical, selectedCell.cylindrical, modelObj, activePolicy);
+              return (
+                <div style={{ 
+                  background: priceInfo.isOver ? 'rgba(234,179,8,0.12)' : 'rgba(34,197,94,0.12)', 
+                  border: priceInfo.isOver ? '1px solid rgba(234,179,8,0.4)' : '1px solid rgba(34,197,94,0.4)', 
+                  borderRadius: '10px', 
+                  padding: '12px 16px', 
+                  marginBottom: '20px', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center' 
+                }}>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))', fontWeight: 'bold', display: 'block' }}>
+                      💰 Preço da Dioptria (Regra de Grau)
+                    </span>
+                    <strong style={{ fontSize: '1.25rem', color: priceInfo.isOver ? '#b45309' : '#15803d' }}>
+                      R$ {priceInfo.finalPrice.toFixed(2)}
+                    </strong>
+                    <span style={{ fontSize: '0.75rem', display: 'block', color: 'hsl(var(--text-secondary))', marginTop: '2px' }}>
+                      {priceInfo.isOver 
+                        ? `Sobretaxa aplicada: Excede limite de ${priceInfo.threshold.toFixed(2)}D CIL ou 4.00D ESF` 
+                        : `Faixa Padrão: ≤ 4.00D ESF e ≤ ${priceInfo.threshold.toFixed(2)}D CIL`}
+                    </span>
+                  </div>
+                  <span style={{ 
+                    padding: '4px 10px', 
+                    borderRadius: '6px', 
+                    fontSize: '0.78rem', 
+                    fontWeight: 700, 
+                    background: priceInfo.isOver ? 'rgba(234,179,8,0.2)' : 'rgba(34,197,94,0.2)', 
+                    color: priceInfo.isOver ? '#854d0e' : '#166534',
+                    border: priceInfo.isOver ? '1px solid rgba(234,179,8,0.5)' : '1px solid rgba(34,197,94,0.5)'
+                  }}>
+                    {priceInfo.label}
+                  </span>
+                </div>
+              );
+            })()}
 
             {selectedCell.item ? (
               editingItemId !== null ? (
@@ -702,6 +827,14 @@ const GradeOptica = ({ onOpenManualInsert }) => {
                           <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))', display: 'block' }}>
                             Tratamento: {item.lens_model?.treatment} (Ø{item.lens_model?.diameter}mm)
                           </span>
+                          {item.lens_model && (() => {
+                            const subPriceInfo = getDiopterPriceInfo(selectedCell.spherical, selectedCell.cylindrical, item.lens_model, activePolicy);
+                            return (
+                              <div style={{ fontSize: '0.8rem', color: subPriceInfo.isOver ? '#b45309' : '#15803d', fontWeight: 700, marginTop: '4px' }}>
+                                💰 Preço da Dioptria: R$ {subPriceInfo.finalPrice.toFixed(2)} ({subPriceInfo.label})
+                              </div>
+                            );
+                          })()}
                         </div>
                         <span style={{ 
                           fontSize: '1.1rem', 
@@ -734,25 +867,6 @@ const GradeOptica = ({ onOpenManualInsert }) => {
                   ))}
                   
                   <div style={{ marginTop: '10px', borderTop: '1px dashed var(--border-glass)', paddingTop: '15px' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                      onClick={() => {
-                        setSelectedCell(null);
-                        if (onOpenManualInsert) {
-                          onOpenManualInsert({
-                            barcode: '',
-                            quantity: 1,
-                            spherical: selectedCell.spherical,
-                            cylindrical: selectedCell.cylindrical,
-                            lensModelId: ''
-                          });
-                        }
-                      }}
-                    >
-                      <Plus size={16} /> Cadastrar Lente de outro Modelo
-                    </button>
                   </div>
                 </div>
               ) : (
@@ -776,6 +890,20 @@ const GradeOptica = ({ onOpenManualInsert }) => {
                       {selectedCell.item.barcode || 'Sem código associado'}
                     </p>
                   </div>
+                  {selectedCell.item.lens_model && (() => {
+                    const priceInfo = getDiopterPriceInfo(selectedCell.spherical, selectedCell.cylindrical, selectedCell.item.lens_model, activePolicy);
+                    return (
+                      <div style={{ background: priceInfo.isOver ? 'rgba(234,179,8,0.12)' : 'rgba(34,197,94,0.12)', border: priceInfo.isOver ? '1px solid rgba(234,179,8,0.4)' : '1px solid rgba(34,197,94,0.4)', padding: '10px 14px', borderRadius: '8px', fontSize: '0.85rem' }}>
+                        <span style={{ color: 'hsl(var(--text-secondary))', fontSize: '0.78rem', display: 'block' }}>Preço de Revenda (Tabela por Grau):</span>
+                        <strong style={{ fontSize: '1.1rem', color: priceInfo.isOver ? '#b45309' : '#15803d' }}>
+                          R$ {priceInfo.finalPrice.toFixed(2)}
+                        </strong>
+                        <span style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', marginLeft: '8px' }}>
+                          ({priceInfo.label})
+                        </span>
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15, 23, 42, 0.02)', padding: '12px', borderRadius: '10px', marginTop: '10px' }}>
                     <span>Estoque Físico Disponível:</span>
                     <span style={{ 
@@ -803,27 +931,9 @@ const GradeOptica = ({ onOpenManualInsert }) => {
               <div style={{ textAlign: 'center', padding: '20px', background: 'rgba(15, 23, 42, 0.02)', borderRadius: '10px' }}>
                 <ShieldAlert size={36} style={{ color: 'hsl(var(--text-muted))', marginBottom: '10px' }} />
                 <p>Nenhuma lente com esta dioptria está registrada física ou logicamente.</p>
-                <p style={{ fontSize: '0.8rem', marginTop: '8px', marginBottom: '12px' }}>Use o scanner do celular para bipar e registrar essa lente no estoque.</p>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                  onClick={() => {
-                    setSelectedCell(null);
-                    if (onOpenManualInsert) {
-                      onOpenManualInsert({
-                        barcode: '',
-                        quantity: 1,
-                        spherical: selectedCell.spherical,
-                        cylindrical: selectedCell.cylindrical,
-                        lensModelId: selectedModelId
-                      });
-                    }
-                  }}
-                >
-                  <Plus size={16} />
-                  Cadastrar Grau Manualmente
-                </button>
+                <p style={{ fontSize: '0.85rem', marginTop: '8px', marginBottom: '0', color: 'hsl(var(--text-muted))' }}>
+                  Acesse o <strong>Cadastrador Unificado de Lentes & Bipador</strong> no menu principal para dar entrada nesta dioptria.
+                </p>
               </div>
             )}
 

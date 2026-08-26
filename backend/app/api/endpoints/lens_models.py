@@ -16,8 +16,8 @@ async def create_new_lens_model(
     current_user: Any = Depends(get_current_active_admin)
 ):
     """
-    Cadastra um novo modelo base de lente (Marca, Material, Índice de Refração, etc.).
-    Apenas Administradores podem cadastrar novos modelos.
+    Cadastra um novo modelo base de lente (Marca, Material, Índice de Refração, etc. e Preços por Grau).
+    Apenas Administradores podem cadastrar novos modelos e preços.
     """
     # Verifica se já existe um modelo com os mesmos atributos para evitar duplicidade
     existing = await crud_lens.get_lens_model_by_attributes(
@@ -26,9 +26,28 @@ async def create_new_lens_model(
         material=model_in.material,
         refractive_index=model_in.refractive_index,
         treatment=model_in.treatment,
-        diameter=model_in.diameter
+        diameter=model_in.diameter,
+        matrix_type=getattr(model_in, 'matrix_type', None)
     )
     if existing:
+        # Atualiza preços e limites se foram informados no payload
+        needs_update = False
+        if model_in.sale_price is not None and existing.sale_price != model_in.sale_price:
+            existing.sale_price = model_in.sale_price
+            needs_update = True
+        if model_in.sale_price_over_threshold is not None and existing.sale_price_over_threshold != model_in.sale_price_over_threshold:
+            existing.sale_price_over_threshold = model_in.sale_price_over_threshold
+            needs_update = True
+        if model_in.degree_threshold is not None and existing.degree_threshold != model_in.degree_threshold:
+            existing.degree_threshold = model_in.degree_threshold
+            needs_update = True
+        if model_in.cost_price is not None and existing.cost_price != model_in.cost_price:
+            existing.cost_price = model_in.cost_price
+            needs_update = True
+        if needs_update:
+            db.add(existing)
+            await db.commit()
+            await db.refresh(existing)
         return existing
         
     return await crud_lens.create_lens_model(db, model_in)
@@ -72,7 +91,7 @@ async def update_lens_model(
     current_user: Any = Depends(get_current_active_admin)
 ):
     """
-    Atualiza as informações (por exemplo, preço de custo) de um modelo de lente existente.
+    Atualiza as informações e preços por grau de um modelo de lente existente.
     Apenas Administradores podem atualizar.
     """
     updated_model = await crud_lens.update_lens_model(db, model_id, model_in)

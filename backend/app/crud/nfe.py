@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -78,7 +78,7 @@ async def create_nfe_saida(db: AsyncSession, cycle_id: uuid.UUID) -> NfeSaida:
         chave_acesso=chave_acesso,
         xml_content=xml_content,
         status="EMITIDA",
-        emitted_at=datetime.utcnow()
+        emitted_at=datetime.now(timezone.utc)
     )
     
     db.add(db_nfe)

@@ -88,9 +88,28 @@ class ServiceOrder(Base):
     optical_store_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         Uuid, ForeignKey("optical_stores.id", ondelete="SET NULL"), nullable=True, index=True
     )
+
+    # Vínculos e Metadados da Esteira Fabril
+    client_order_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tray_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    priority: Mapped[Optional[str]] = mapped_column(String(20), default="NORMAL", nullable=True)
+    lens_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid, ForeignKey("lens_models.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    custom_price_applied: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    price_override_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    special_instructions: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     
     # Total de Faturamento Acumulado (Lente + Tratamentos + Serviços)
     total_amount: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00, nullable=False)
+
+    @property
+    def total_price(self) -> float:
+        return float(self.total_amount)
+
+    @total_price.setter
+    def total_price(self, val: float):
+        self.total_amount = Decimal(str(val))
     
     doctor_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     clinical_notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -113,6 +132,9 @@ class ServiceOrder(Base):
 
     
     # Relacionamentos
+    lens_model: Mapped[Optional["LensModel"]] = relationship(
+        "LensModel", foreign_keys=[lens_model_id]
+    )
     od_lens_inventory: Mapped[Optional["LensInventoryGrade"]] = relationship(
         "LensInventoryGrade", foreign_keys=[od_lens_inventory_id]
     )

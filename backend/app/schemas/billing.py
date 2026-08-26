@@ -11,6 +11,16 @@ class BillingCycleCreate(BaseModel):
     service_order_ids: List[uuid.UUID]
     due_date: Optional[datetime] = None
 
+class OSItemDetail(BaseModel):
+    name: str
+    description: Optional[str] = None
+    item_type: str = "Serviço" # 'Lente', 'Serviço', 'Tratamento'
+    quantity: int = 1
+    unit_price: float = 0.0
+    total_price: float = 0.0
+
+    model_config = ConfigDict(from_attributes=True)
+
 class BillingItemResponse(BaseModel):
     id: uuid.UUID
     billing_cycle_id: uuid.UUID
@@ -24,6 +34,10 @@ class BillingItemResponse(BaseModel):
     lens_type: Optional[str] = None
     treatments: Optional[str] = None
     services: Optional[str] = None
+    lens_price: Optional[float] = 0.0
+    service_price: Optional[float] = 0.0
+    treatment_price: Optional[float] = 0.0
+    detailed_items: List[OSItemDetail] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -64,6 +78,10 @@ class PendingOrderResponse(BaseModel):
     lens_type: Optional[str] = None
     treatments: Optional[str] = None
     services: Optional[str] = None
+    lens_price: Optional[float] = 0.0
+    service_price: Optional[float] = 0.0
+    treatment_price: Optional[float] = 0.0
+    detailed_items: List[OSItemDetail] = []
 
     model_config = ConfigDict(from_attributes=True)
 

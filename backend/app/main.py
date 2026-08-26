@@ -1,6 +1,6 @@
 import asyncio
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import uuid
 from fastapi import FastAPI
 
@@ -74,6 +74,52 @@ async def startup_event():
                 ))
             except Exception:
                 pass
+
+            try:
+                await conn.execute(text(
+                    "ALTER TABLE lens_models ADD COLUMN degree_threshold NUMERIC(4, 2) DEFAULT 2.00;"
+                ))
+            except Exception:
+                pass
+
+            try:
+                await conn.execute(text(
+                    "ALTER TABLE lens_models ADD COLUMN sale_price_over_threshold NUMERIC(10, 2) DEFAULT 95.00;"
+                ))
+            except Exception:
+                pass
+
+            # Migrações da Refatoração de Matrizes e Presets
+            for col_sql in [
+                "ALTER TABLE lens_models ADD COLUMN code VARCHAR(50);",
+                "ALTER TABLE lens_models ADD COLUMN name VARCHAR(150);",
+                "ALTER TABLE lens_models ADD COLUMN matrix_type VARCHAR(50) DEFAULT 'LP_GRADE';",
+                "ALTER TABLE lens_models ADD COLUMN production_route VARCHAR(50) DEFAULT 'EXPRESSA_FACETAMENTO';",
+                "ALTER TABLE lens_models ADD COLUMN average_cost_price NUMERIC(10, 2) DEFAULT 25.00;",
+                "ALTER TABLE lens_models ADD COLUMN last_purchase_price NUMERIC(10, 2) DEFAULT 25.00;",
+                "ALTER TABLE lens_inventory_grade ADD COLUMN base_curve NUMERIC(4, 2);",
+                "ALTER TABLE lens_inventory_grade ADD COLUMN addition NUMERIC(4, 2);",
+                "ALTER TABLE lens_inventory_grade ADD COLUMN eye VARCHAR(2);",
+                "ALTER TABLE lens_inventory_grade ADD COLUMN reserved_quantity INTEGER DEFAULT 0;",
+                "ALTER TABLE lens_inventory_grade ADD COLUMN quantity_reserved INTEGER DEFAULT 0;",
+                "ALTER TABLE lens_inventory_grade ADD COLUMN average_cost_price NUMERIC(10, 2);",
+                "ALTER TABLE lens_inventory_grade ADD COLUMN last_purchase_price NUMERIC(10, 2);",
+                "ALTER TABLE block_models ADD COLUMN average_cost_price NUMERIC(10, 2) DEFAULT 35.00;",
+                "ALTER TABLE block_models ADD COLUMN last_purchase_price NUMERIC(10, 2) DEFAULT 35.00;",
+                "ALTER TABLE block_grid_items ADD COLUMN average_cost_price NUMERIC(10, 2);",
+                "ALTER TABLE block_grid_items ADD COLUMN last_purchase_price NUMERIC(10, 2);",
+                "ALTER TABLE service_orders ADD COLUMN client_order_number VARCHAR(100);",
+                "ALTER TABLE service_orders ADD COLUMN tray_number VARCHAR(50);",
+                "ALTER TABLE service_orders ADD COLUMN priority VARCHAR(20) DEFAULT 'NORMAL';",
+                "ALTER TABLE service_orders ADD COLUMN lens_model_id CHAR(36);",
+                "ALTER TABLE service_orders ADD COLUMN custom_price_applied BOOLEAN DEFAULT 0;",
+                "ALTER TABLE service_orders ADD COLUMN price_override_reason VARCHAR(255);",
+                "ALTER TABLE service_orders ADD COLUMN special_instructions VARCHAR(500);"
+            ]:
+                try:
+                    await conn.execute(text(col_sql))
+                except Exception:
+                    pass
 
             # Adiciona coluna doctor_name se ela não existir no SQLite/Postgres legados
             try:
@@ -272,92 +318,38 @@ async def startup_event():
             await session.refresh(role_admin)
             await session.refresh(role_op)
             
-            # 2. Verifica/cria o admin padrão (login 'admin', senha 'admin')
-            # SEGURANÇA: a senha é criada apenas na primeira execução.
-            # O sistema nunca reseta senhas de usuários existentes.
-            admin_user_query = await session.execute(select(User).where(User.email == "admin"))
-            admin_user = admin_user_query.scalars().first()
-            if not admin_user:
-                admin_user = User(
-                    name="Administrador do Sistema",
-                    email="admin",
-                    hashed_password=get_password_hash("admin"),
+            # 2. Verifica/cria o usuário suporte padrão (login 'suporte', senha 'Dio@sup.2203')
+            suporte_user_query = await session.execute(select(User).where(User.email == "suporte"))
+            suporte_user = suporte_user_query.scalars().first()
+            if not suporte_user:
+                suporte_user = User(
+                    name="Suporte Técnico Nova Lab",
+                    email="suporte",
+                    hashed_password=get_password_hash("Dio@sup.2203"),
                     is_active=True,
-                    must_change_password=True,  # Força troca de senha no primeiro acesso
+                    must_change_password=False,
                     role_id=role_admin.id
                 )
-                session.add(admin_user)
+                session.add(suporte_user)
                 await session.commit()
-                print("[INFO] Usuario Administrador padrao criado. TROQUE A SENHA NO PRIMEIRO ACESSO!")
-                
-            # 3. Verifica/cria o operador padrão (login 'teste', senha 'teste') — APENAS PARA DESENVOLVIMENTO
-            # Remova ou desative este bloco antes de ir para produção.
-            operator_user_query = await session.execute(select(User).where(User.email == "teste"))
-            operator_user = operator_user_query.scalars().first()
-            if not operator_user:
-                operator_user = User(
-                    name="Operador Teste",
-                    email="teste",
-                    hashed_password=get_password_hash("teste"),
-                    is_active=True,
-                    must_change_password=True,  # Força troca de senha no primeiro acesso
-                    role_id=role_op.id
+                print("[INFO] Usuario Suporte padrao (suporte / Dio@sup.2203) criado com sucesso.")
+
+            # 4. Semeia a Política Global de Precificação por Grau se não existir
+            from backend.app.models.degree_policy import DegreePricingPolicy
+            policy_query = await session.execute(select(DegreePricingPolicy).where(DegreePricingPolicy.is_active == True))
+            existing_policy = policy_query.scalars().first()
+            if not existing_policy:
+                default_policy = DegreePricingPolicy(
+                    degree_threshold=Decimal("2.00"),
+                    default_sale_price_le=Decimal("75.00"),
+                    default_sale_price_gt=Decimal("95.00"),
+                    is_active=True
                 )
-                session.add(operator_user)
+                session.add(default_policy)
                 await session.commit()
-                print("[INFO] Usuario Operador padrao (teste/teste) criado. APENAS PARA DESENVOLVIMENTO.")
+                print("[INFO] Política Global de Precificação por Grau semeada por padrão.")
                 
-            # 3. Garante a semeadura de serviços de montagem exigidos na Sprint 7
-            from backend.app.models.financial_catalog import TechnicalService
-            from backend.app.models.financial_catalog import PriceHistory
-            
-            services_query = await session.execute(select(TechnicalService))
-            services_list = services_query.scalars().all()
-            if not services_list:
-                default_services = [
-                    TechnicalService(
-                        name="montagem simples",
-                        description="Serviço técnico de montagem simples em armação fechada",
-                        price=Decimal("30.00"),
-                        is_active=True,
-                        current_version=1
-                    ),
-                    TechnicalService(
-                        name="nylon",
-                        description="Serviço técnico de montagem em armação com fio de nylon",
-                        price=Decimal("40.00"),
-                        is_active=True,
-                        current_version=1
-                    ),
-                    TechnicalService(
-                        name="3 peças",
-                        description="Serviço técnico de montagem em armação de 3 peças (parafusada)",
-                        price=Decimal("60.00"),
-                        is_active=True,
-                        current_version=1
-                    ),
-                    TechnicalService(
-                        name="remontagem",
-                        description="Serviço técnico de remontagem ou ajuste de lentes em armação nova",
-                        price=Decimal("35.00"),
-                        is_active=True,
-                        current_version=1
-                    )
-                ]
-                session.add_all(default_services)
-                await session.flush()
-                
-                for service in default_services:
-                    history = PriceHistory(
-                        entity_type="service",
-                        entity_id=service.id,
-                        version=1,
-                        price=service.price,
-                        change_reason="Cadastro de serviço de montagem padrão (Sprint 7)"
-                    )
-                    session.add(history)
-                await session.commit()
-                print("[INFO] Servicos de montagem padrao semeados com sucesso.")
+
                 
             # Semeia ou atualiza o laboratório padrão (Nova LAB)
             from backend.app.models.laboratory import Laboratory
@@ -521,36 +513,45 @@ async def startup_event():
             # Seleciona todos os modelos de lentes existentes
             lens_models_query = await session.execute(select(LensModel))
             lens_models = lens_models_query.scalars().all()
+            active_lm_ids = {lm.id for lm in lens_models}
             
+            # Remove produtos órfãos de lentes
+            p_lens_stmt = select(Product).where(Product.is_lens == True)
+            existing_lens_prods = (await session.execute(p_lens_stmt)).scalars().all()
+            for p_item in existing_lens_prods:
+                if p_item.lens_model_id not in active_lm_ids:
+                    await session.delete(p_item)
+            await session.flush()
+
             for lm in lens_models:
-                # Verifica se este modelo já está associado a algum produto do catálogo comercial
                 p_query = await session.execute(
                     select(Product).where(Product.lens_model_id == lm.id)
                 )
                 existing_product = p_query.scalars().first()
                 
-                if not existing_product:
-                    # Se não existe, criamos o produto faturável correspondente no catálogo
-                    print(f"[INFO] Importando modelo de lente {lm.brand} {lm.treatment} ({lm.refractive_index}) para o catálogo financeiro...")
-                    idx_str = f"{lm.refractive_index:.2f}"
-                    name_parts = [
-                        "Lente",
-                        lm.brand.strip(),
-                        lm.treatment.strip(),
-                        idx_str
-                    ]
-                    prod_name = " ".join(part for part in name_parts if part)
-                    
-                    # Cria um SKU limpo e único
+                idx_str = f"{float(lm.refractive_index):.2f}"
+                name_parts = ["Lente", lm.brand.strip(), lm.treatment.strip(), idx_str]
+                prod_name = " ".join(part for part in name_parts if part)
+                cost_val = float(lm.cost_price or 25.0)
+                sale_val = float(lm.sale_price) if (lm.sale_price and float(lm.sale_price) > 0) else max(cost_val * 3.0, 50.0)
+
+                if existing_product:
+                    existing_product.name = prod_name
+                    existing_product.brand = lm.brand
+                    existing_product.material = lm.material
+                    existing_product.refractive_index = float(lm.refractive_index)
+                    existing_product.treatment = lm.treatment
+                    existing_product.diameter = lm.diameter
+                    existing_product.cost_price = cost_val
+                    existing_product.sale_price = sale_val
+                    existing_product.is_active = True
+                    session.add(existing_product)
+                else:
                     brand_slug = lm.brand[:3].upper() if lm.brand else "LNT"
                     treat_slug = lm.treatment[:3].upper() if lm.treatment else "INC"
                     idx_slug = idx_str.replace(".", "")
                     rand_id = str(lm.id)[:4].upper()
                     sku_code = f"L-{brand_slug}-{treat_slug}-{idx_slug}-{rand_id}"
-                    
-                    # Preço de custo da lente física e preço de venda sugerido (custo * 3x com fallback mínimo de R$ 50)
-                    cost_val = float(lm.cost_price or 25.0)
-                    sale_val = max(cost_val * 3.0, 50.0)
                     
                     new_prod = Product(
                         name=prod_name,
@@ -571,14 +572,13 @@ async def startup_event():
                     session.add(new_prod)
                     await session.flush()
                     
-                    # Registra a versão de preço inicial no histórico
                     price_hist = PriceHistory(
                         entity_type="product",
                         entity_id=new_prod.id,
                         price=new_prod.sale_price,
                         cost_price=new_prod.cost_price,
                         version=1,
-                        start_date=datetime.utcnow(),
+                        start_date=datetime.now(timezone.utc),
                         change_reason="Importação automática da grade de estoque (unificação)"
                     )
                     session.add(price_hist)

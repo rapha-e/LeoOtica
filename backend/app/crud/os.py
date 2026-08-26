@@ -1,6 +1,6 @@
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from typing import List, Optional, Tuple
 from decimal import Decimal
@@ -38,12 +38,32 @@ async def generate_clinical_embedding(text: str) -> List[float]:
 
 async def generate_os_number(db: AsyncSession) -> str:
     """
-    Gera um número de OS único e sequencial (Ex: OS-2026-0001)
+    Gera um número de OS único e sequencial (Ex: OS-2026-0001).
+    Busca todas as OS do ano atual para computar o maior número sequencial numérico
+    e previne colisões com formatos legados.
     """
-    query = select(func.count(ServiceOrder.id))
-    result = await db.execute(query)
-    count = result.scalar_one()
-    return f"OS-{datetime.now().year}-{count + 1:04d}"
+    from datetime import timezone
+    year = datetime.now(timezone.utc).year
+    year_prefix = f"OS-{year}-"
+
+    stmt = select(ServiceOrder.os_number).where(ServiceOrder.os_number.like(f"{year_prefix}%"))
+    result = await db.execute(stmt)
+    existing_numbers = set(result.scalars().all())
+
+    max_seq = 0
+    for num in existing_numbers:
+        suffix = num.replace(year_prefix, "")
+        if suffix.isdigit():
+            val = int(suffix)
+            if val > max_seq:
+                max_seq = val
+
+    next_num = f"{year_prefix}{max_seq + 1:04d}"
+    while next_num in existing_numbers:
+        max_seq += 1
+        next_num = f"{year_prefix}{max_seq:04d}"
+
+    return next_num
 
 async def create_service_order(db: AsyncSession, obj_in: ServiceOrderCreate) -> ServiceOrder:
     os_num = obj_in.os_number if obj_in.os_number else await generate_os_number(db)
@@ -67,7 +87,7 @@ async def create_service_order(db: AsyncSession, obj_in: ServiceOrderCreate) -> 
 
         delinquency_info = await check_optical_store_delinquency(db, obj_in.optical_store_id)
         if delinquency_info["is_delinquent"]:
-            fin_val_date = datetime.utcnow()
+            fin_val_date = datetime.now(timezone.utc)
             fin_amount = delinquency_info["total_overdue_amount"]
             fin_count = delinquency_info["overdue_count"]
             fin_max_days = delinquency_info["max_overdue_days"]
@@ -88,6 +108,9 @@ async def create_service_order(db: AsyncSession, obj_in: ServiceOrderCreate) -> 
         doctor_name=obj_in.doctor_name,
         partner_shop_id=obj_in.partner_shop_id,
         optical_store_id=obj_in.optical_store_id,
+        client_order_number=getattr(obj_in, "client_order_number", None),
+        tray_number=getattr(obj_in, "tray_number", None),
+        priority=getattr(obj_in, "priority", "NORMAL"),
         status=initial_status.value if hasattr(initial_status, 'value') else initial_status,
         os_type=obj_in.os_type or "PADRAO",
         od_spherical=obj_in.od_spherical,
@@ -201,11 +224,21 @@ async def authorize_financial_blocked_os(
         return None
 
 
+    # Guarda de estado: valida se a OS está realmente bloqueada financeiramente
+    blocked_statuses = [
+        OSStatus.BLOQUEADA_FINANCEIRO, OSStatus.BLOQUEADA_FINANCEIRO.value,
+        OSStatus.AGUARDANDO_LIBERACAO, OSStatus.AGUARDANDO_LIBERACAO.value,
+        "Bloqueada por Inadimplência", "Aguardando Liberação Financeira"
+    ]
+    if os_obj.status not in blocked_statuses:
+        # Já foi liberada anteriormente — retorna sem modificar
+        return await get_service_order(db, os_id)
+
     prev_status = os_obj.status
     os_obj.status = OSStatus.RECEBIDA.value
     os_obj.financial_authorized_by_id = admin_user_id
 
-    os_obj.financial_authorized_at = datetime.utcnow()
+    os_obj.financial_authorized_at = datetime.now(timezone.utc)
     os_obj.financial_authorization_notes = notes or "Liberação de crédito efetuada pelo Administrador."
 
     await db.commit()
@@ -215,17 +248,18 @@ async def authorize_financial_blocked_os(
 
     # Dispara a alocação de estoque caso a OS possua os dados geométricos e o modelo de lente
     if os_obj.frame_a and os_obj.frame_bridge and os_obj.frame_ed:
-        # Busca se a OS possui item de lente configurado nos items ou modelos
-        prod_items = [i for i in os_obj.items if getattr(i, "entity_type", "") == "product"] if os_obj.items else []
-        lens_model_id = None
-        if prod_items:
-            # Tenta extrair o modelo do produto
-            from backend.app.models.financial_catalog import Product
-            p_res = await db.execute(select(Product).where(Product.id == prod_items[0].entity_id))
+        # Prioridade 1: usa o lens_model_id diretamente do campo da OS (fluxo fabril)
+        lens_model_id = os_obj.lens_model_id
 
-            p_obj = p_res.scalar_one_or_none()
-            if p_obj and p_obj.lens_model_id:
-                lens_model_id = p_obj.lens_model_id
+        # Prioridade 2: tenta encontrar via itens de produto (fluxo manual)
+        if not lens_model_id:
+            prod_items = [i for i in os_obj.items if getattr(i, "entity_type", "") == "product"] if os_obj.items else []
+            if prod_items:
+                from backend.app.models.financial_catalog import Product
+                p_res = await db.execute(select(Product).where(Product.id == prod_items[0].entity_id))
+                p_obj = p_res.scalar_one_or_none()
+                if p_obj and p_obj.lens_model_id:
+                    lens_model_id = p_obj.lens_model_id
 
         if lens_model_id:
             alloc_payload = AllocateRequest(
@@ -243,6 +277,58 @@ async def authorize_financial_blocked_os(
 
 
 
+async def enrich_os_items(db: AsyncSession, os_objs: list):
+    """Enriquece os itens da OS com os campos 'name' e 'description' vindos do catálogo financeiro."""
+    if not os_objs:
+        return os_objs
+    
+    all_items = []
+    for os_obj in os_objs:
+        if os_obj and os_obj.items:
+            all_items.extend(os_obj.items)
+            
+    if not all_items:
+        return os_objs
+        
+    product_ids = list(set(i.entity_id for i in all_items if i.entity_type == "product"))
+    treatment_ids = list(set(i.entity_id for i in all_items if i.entity_type == "treatment"))
+    service_ids = list(set(i.entity_id for i in all_items if i.entity_type == "service"))
+
+    products_map = {}
+    treatments_map = {}
+    services_map = {}
+
+    from backend.app.models.financial_catalog import Product, Treatment, TechnicalService
+
+    if product_ids:
+        res = await db.execute(select(Product).where(Product.id.in_(product_ids)))
+        products_map = {p.id: p for p in res.scalars().all()}
+    if treatment_ids:
+        res = await db.execute(select(Treatment).where(Treatment.id.in_(treatment_ids)))
+        treatments_map = {t.id: t for t in res.scalars().all()}
+    if service_ids:
+        res = await db.execute(select(TechnicalService).where(TechnicalService.id.in_(service_ids)))
+        services_map = {s.id: s for s in res.scalars().all()}
+
+    for item in all_items:
+        if item.entity_type == "product" and item.entity_id in products_map:
+            p = products_map[item.entity_id]
+            setattr(item, "name", p.name)
+            setattr(item, "description", p.description or p.name)
+        elif item.entity_type == "treatment" and item.entity_id in treatments_map:
+            t = treatments_map[item.entity_id]
+            setattr(item, "name", t.name)
+            setattr(item, "description", t.description or t.name)
+        elif item.entity_type == "service" and item.entity_id in services_map:
+            s = services_map[item.entity_id]
+            setattr(item, "name", s.name)
+            setattr(item, "description", s.description or s.name)
+        else:
+            setattr(item, "name", f"Item ({item.entity_type})")
+            setattr(item, "description", f"Item de faturamento ({item.entity_type})")
+
+    return os_objs
+
 async def get_service_order(db: AsyncSession, os_id: uuid.UUID) -> Optional[ServiceOrder]:
     query = (
         select(ServiceOrder)
@@ -258,7 +344,10 @@ async def get_service_order(db: AsyncSession, os_id: uuid.UUID) -> Optional[Serv
         )
     )
     result = await db.execute(query)
-    return result.scalar_one_or_none()
+    os_obj = result.scalar_one_or_none()
+    if os_obj:
+        await enrich_os_items(db, [os_obj])
+    return os_obj
 
 async def get_service_orders(
     db: AsyncSession, 
@@ -304,6 +393,8 @@ async def get_service_orders(
             .where(
                 or_(
                     ServiceOrder.os_number.ilike(query_str_clean),
+                    ServiceOrder.client_order_number.ilike(query_str_clean),
+                    ServiceOrder.tray_number.ilike(query_str_clean),
                     ServiceOrder.client_name.ilike(query_str_clean),
                     OpticalStore.cnpj.ilike(query_str_clean),
                     PartnerShop.cnpj.ilike(query_str_clean),
@@ -346,6 +437,9 @@ async def get_service_orders(
         orders_with_emb.sort(key=lambda o: cosine_similarity(o.clinical_embedding, query_vector), reverse=True)
         orders = orders_with_emb + orders_no_emb
         
+    if orders:
+        await enrich_os_items(db, orders)
+
     return orders
 
 
@@ -465,8 +559,26 @@ async def allocate_lenses_for_os(
     od_min_diameter = os_obj.frame_ed + (Decimal("2.0") * od_decentration) + Decimal("2.0")
     oe_min_diameter = os_obj.frame_ed + (Decimal("2.0") * oe_decentration) + Decimal("2.0")
     
-    od_item = await get_inventory_item_for_allocation(db, payload.lens_model_id, od_sph, od_cyl)
-    oe_item = await get_inventory_item_for_allocation(db, payload.lens_model_id, oe_sph, oe_cyl)
+    # Carrega o modelo de lente para determinar o matrix_type
+    from backend.app.models.lens import LensModel
+    lm_res = await db.execute(select(LensModel).where(LensModel.id == payload.lens_model_id))
+    lens_model_obj = lm_res.scalar_one_or_none()
+    matrix_type = lens_model_obj.matrix_type if lens_model_obj else "LP_GRADE"
+
+    od_item = await get_inventory_item_for_allocation(
+        db, payload.lens_model_id, od_sph, od_cyl,
+        matrix_type=matrix_type,
+        addition=os_obj.od_addition,
+        base_curve=getattr(payload, 'od_base_curve', None),
+        eye="OD"
+    )
+    oe_item = await get_inventory_item_for_allocation(
+        db, payload.lens_model_id, oe_sph, oe_cyl,
+        matrix_type=matrix_type,
+        addition=os_obj.oe_addition,
+        base_curve=getattr(payload, 'oe_base_curve', None),
+        eye="OE"
+    )
     
     if not od_item or not oe_item:
         msg = f"Dioptria necessária não localizada no estoque para o modelo selecionado. OD: {od_sph:+.2f}/{od_cyl:+.2f} | OE: {oe_sph:+.2f}/{oe_cyl:+.2f}."
@@ -598,18 +710,73 @@ async def allocate_lenses_for_os(
     return True, "Alocação e reserva de estoque executadas com sucesso.", os_loaded
 
 async def get_inventory_item_for_allocation(
-    db: AsyncSession, model_id: uuid.UUID, sph: Decimal, cyl: Decimal
+    db: AsyncSession,
+    model_id: uuid.UUID,
+    sph: Decimal,
+    cyl: Decimal,
+    matrix_type: Optional[str] = None,
+    addition: Optional[Decimal] = None,
+    base_curve: Optional[Decimal] = None,
+    eye: Optional[str] = None
 ) -> Optional[LensInventoryGrade]:
-    query = (
-        select(LensInventoryGrade)
-        .where(
-            LensInventoryGrade.lens_model_id == model_id,
-            func.abs(func.coalesce(LensInventoryGrade.spherical, 0.0) - float(sph)) < 0.001,
-            func.abs(func.coalesce(LensInventoryGrade.cylindrical, 0.0) - float(cyl)) < 0.001
+    """
+    Busca item de estoque respeitando o tipo de matriz:
+    - LP_GRADE / GRADE_167: busca por esférico + cilíndrico
+    - MF_ACB / MF_BLOCO: busca por adição + olho
+    - BLOCO_VS: busca por curva base
+    """
+    from backend.app.models.lens import MatrixType
+
+    mtype = matrix_type or MatrixType.LP_GRADE
+
+    if mtype in [MatrixType.MF_ACB, MatrixType.MF_BLOCO, "MF_ACB", "MF_BLOCO"]:
+        # Lentes multifocais: match por adição + olho
+        if addition is None:
+            return None  # Sem adição, não é possível alocar MF
+        add_val = float(addition)
+        query = (
+            select(LensInventoryGrade)
+            .where(
+                LensInventoryGrade.lens_model_id == model_id,
+                func.abs(func.coalesce(LensInventoryGrade.addition, 0.0) - add_val) < 0.001,
+                LensInventoryGrade.eye == eye if eye else True
+            )
+            .options(selectinload(LensInventoryGrade.lens_model))
+            .with_for_update()
         )
-        .options(selectinload(LensInventoryGrade.lens_model))
-        .with_for_update()
-    )
+    elif mtype in [MatrixType.BLOCO_VS, "BLOCO_VS"]:
+        # Blocos: match por curva base
+        if base_curve is not None and float(base_curve) > 0:
+            base_val = float(base_curve)
+            query = (
+                select(LensInventoryGrade)
+                .where(
+                    LensInventoryGrade.lens_model_id == model_id,
+                    func.abs(func.coalesce(LensInventoryGrade.base_curve, 0.0) - base_val) < 0.001
+                )
+                .options(selectinload(LensInventoryGrade.lens_model))
+                .with_for_update()
+            )
+        else:
+            query = (
+                select(LensInventoryGrade)
+                .where(LensInventoryGrade.lens_model_id == model_id)
+                .options(selectinload(LensInventoryGrade.lens_model))
+                .with_for_update()
+            )
+    else:
+        # LP_GRADE e GRADE_167: match por esférico + cilíndrico (comportamento original)
+        query = (
+            select(LensInventoryGrade)
+            .where(
+                LensInventoryGrade.lens_model_id == model_id,
+                func.abs(func.coalesce(LensInventoryGrade.spherical, 0.0) - float(sph)) < 0.001,
+                func.abs(func.coalesce(LensInventoryGrade.cylindrical, 0.0) - float(cyl)) < 0.001
+            )
+            .options(selectinload(LensInventoryGrade.lens_model))
+            .with_for_update()
+        )
+
     res = await db.execute(query)
     return res.scalar_one_or_none()
 
@@ -637,7 +804,13 @@ async def reprocess_broken_lenses(
     if not os_obj:
         return False, "Ordem de Serviço não encontrada.", None
         
-    if os_obj.status not in [OSStatus.SEPARACAO, OSStatus.PRODUCAO, OSStatus.MONTAGEM, OSStatus.CQ]:
+    if os_obj.status not in [
+        OSStatus.SEPARACAO, OSStatus.PRODUCAO, OSStatus.MONTAGEM, OSStatus.CQ,
+        OSStatus.SEPARACAO.value, OSStatus.PRODUCAO.value, OSStatus.MONTAGEM.value, OSStatus.CQ.value,
+        OSStatus.CQ_FINAL.value, OSStatus.CQ_FINAL,
+        "Separação", "Produção", "Surfaçagem", "Montagem", "CQ", "CQ Final",
+        OSStatus.SURFACAGEM, OSStatus.SURFACAGEM.value
+    ]:
         return False, f"Reprocessamento não permitido para OS no estado {os_obj.status}.", os_obj
         
     prev_status = os_obj.status
@@ -731,6 +904,20 @@ async def get_os_dashboard_kpis(db: AsyncSession) -> dict:
         if rec.service_order_id not in os_history:
             os_history[rec.service_order_id] = []
         os_history[rec.service_order_id].append(rec)
+        
+    status_map = {
+        "Recebida": OSStatus.RECEBIDA,
+        "Separação": OSStatus.SEPARACAO,
+        "Produção": OSStatus.PRODUCAO,
+        "Surfaçagem": OSStatus.SURFACAGEM,
+        "Montagem": OSStatus.MONTAGEM,
+        "CQ": OSStatus.CQ,
+        "CQ Final": OSStatus.CQ_FINAL,
+        "Expedição": OSStatus.EXPEDICAO,
+        "Concluída": OSStatus.CONCLUIDA,
+        "Entregue": OSStatus.ENTREGUE,
+        "Cancelada": OSStatus.CANCELADA
+    }
         
     transition_times = {
         "Recebida -> Separação": [],
@@ -886,9 +1073,9 @@ async def add_item_to_service_order(
     # 7. Atualiza o total acumulado da OS
     await update_os_total_amount(db, os_obj)
     await db.commit()
-    if custom_price_applied:
-        db.expire(os_obj)
     await db.refresh(db_item)
+    setattr(db_item, "name", item_name)
+    setattr(db_item, "description", item_name)
     return db_item
 
 async def remove_item_from_service_order(
@@ -1044,7 +1231,7 @@ async def create_cq_inspection(
         result=result_upper,
         rework_destination=cq_in.rework_destination if result_upper == "RETRABALHO" else None,
         notes=cq_in.notes,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db.add(cq_obj)
     await db.commit()
@@ -1070,8 +1257,14 @@ async def update_service_order(
     if not os_obj:
         return None
         
-    if os_obj.status not in [OSStatus.RECEBIDA, OSStatus.SEPARACAO]:
-        raise ValueError(f"Não é permitido alterar dados técnicos de uma OS no status {os_obj.status.value}.")
+    editable_statuses = [
+        OSStatus.RECEBIDA, OSStatus.RECEBIDA.value,
+        OSStatus.SEPARACAO, OSStatus.SEPARACAO.value,
+        "Recebida", "Separação"
+    ]
+    if os_obj.status not in editable_statuses:
+        status_val = os_obj.status.value if hasattr(os_obj.status, 'value') else os_obj.status
+        raise ValueError(f"Não é permitido alterar dados técnicos de uma OS no status {status_val}.")
         
     fields_changed = False
     technical_fields = [
@@ -1191,6 +1384,10 @@ async def soft_delete_service_order(
     if not os_obj:
         return None
         
+    # Guarda de idempotência: não cancela OS já cancelada
+    if os_obj.status in [OSStatus.CANCELADA, OSStatus.CANCELADA.value, "Cancelada"]:
+        return await get_service_order(db, os_id)
+
     prev_status = os_obj.status
     os_obj.status = OSStatus.CANCELADA
     os_obj.cancellation_reason = cancellation_reason

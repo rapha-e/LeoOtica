@@ -10,5 +10,5 @@ import uvicorn
 from backend.app.main import app
 
 if __name__ == "__main__":
-    # Executa o uvicorn ligando o app FastAPI na porta 8000 e permitindo acessos de outras máquinas na mesma rede (0.0.0.0)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Executa o uvicorn ligando o app FastAPI na porta 8000 com auto-reload ativo
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)

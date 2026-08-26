@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,36 @@ async def get_products(
         sql_query = sql_query.where(and_(*conditions))
         
     sql_query = sql_query.order_by(Product.name.asc()).offset(skip).limit(limit)
-    return list((await db.execute(sql_query)).scalars().all())
+    products = list((await db.execute(sql_query)).scalars().all())
+    
+    # Sincroniza dinamicamente o SKU dos produtos com o campo 'barcode' das lentes de estoque
+    from backend.app.models.lens import LensInventoryGrade, LensModel
+    needs_commit = False
+    for p in products:
+        if p.lens_model_id:
+            g_stmt = select(LensInventoryGrade.barcode).where(
+                LensInventoryGrade.lens_model_id == p.lens_model_id,
+                LensInventoryGrade.barcode.isnot(None),
+                LensInventoryGrade.barcode != ""
+            )
+            bcode = (await db.execute(g_stmt)).scalars().first()
+            if not bcode:
+                m_stmt = select(LensModel.code).where(
+                    LensModel.id == p.lens_model_id,
+                    LensModel.code.isnot(None),
+                    LensModel.code != ""
+                )
+                bcode = (await db.execute(m_stmt)).scalars().first()
+                
+            if bcode and p.sku != bcode:
+                p.sku = bcode
+                db.add(p)
+                needs_commit = True
+
+    if needs_commit:
+        await db.commit()
+        
+    return products
 
 async def create_product(
     db: AsyncSession,
@@ -95,7 +124,7 @@ async def create_product(
         price=db_product.sale_price,
         cost_price=db_product.cost_price,
         version=1,
-        start_date=datetime.utcnow(),
+        start_date=datetime.now(timezone.utc),
         changed_by_id=user_id,
         change_reason=product_in.change_reason or "Cadastro inicial do produto"
     )
@@ -131,7 +160,7 @@ async def update_product(
         )
         last_hist = (await db.execute(hist_query)).scalars().first()
         if last_hist:
-            last_hist.end_date = datetime.utcnow()
+            last_hist.end_date = datetime.now(timezone.utc)
             db.add(last_hist)
             
         # 2. Incrementa a versão
@@ -148,7 +177,7 @@ async def update_product(
             price=new_sale,
             cost_price=new_cost,
             version=new_version,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(timezone.utc),
             changed_by_id=user_id,
             change_reason=product_in.change_reason or f"Reajuste de preço (v.{new_version})"
         )
@@ -160,28 +189,56 @@ async def update_product(
     for field, val in update_data.items():
         setattr(db_product, field, val)
         
-    # Sincroniza com o LensModel correspondente se for uma lente
+    # Sincroniza com o LensModel correspondente e Parâmetros do Sistema se for uma lente
     if db_product.is_lens:
         from backend.app.models.lens import LensModel
+        from backend.app.crud.crud_system_parameters import get_preset_key_for_lens
+        from backend.app.models.system_parameter import SystemParameter
         from decimal import Decimal
+
         if db_product.lens_model_id:
             lens_model = (await db.execute(select(LensModel).where(LensModel.id == db_product.lens_model_id))).scalars().first()
             if lens_model:
-                lens_model.brand = db_product.brand or "Lente"
+                lens_model.name = db_product.name
+                lens_model.brand = db_product.brand or db_product.name
                 lens_model.material = db_product.material or "Resina"
                 lens_model.refractive_index = Decimal(str(db_product.refractive_index or "1.56"))
                 lens_model.treatment = db_product.treatment or "Incolor"
                 lens_model.diameter = db_product.diameter or 70
                 lens_model.cost_price = Decimal(str(db_product.cost_price or "25.00"))
+                lens_model.sale_price = Decimal(str(db_product.sale_price or "75.00"))
                 db.add(lens_model)
+
+                # Re-sincroniza a descrição do parâmetro do sistema se houver chave correspondente
+                pk = get_preset_key_for_lens(
+                    brand=lens_model.brand,
+                    name=lens_model.name,
+                    refractive_index=lens_model.refractive_index,
+                    treatment=lens_model.treatment,
+                    material=lens_model.material
+                )
+                if pk:
+                    p_stmt = select(SystemParameter).where(SystemParameter.key.like(f"{pk}_%"))
+                    params = (await db.execute(p_stmt)).scalars().all()
+                    for param in params:
+                        if "Limite Cilíndrico" in (param.description or ""):
+                            param.description = f"Limite Cilíndrico {db_product.name}"
+                        elif "Preço Base" in (param.description or ""):
+                            param.description = f"Preço Base (Sph 0-6 | Cyl 0-4) {db_product.name}"
+                        elif "Preço Ajustado" in (param.description or ""):
+                            param.description = f"Preço Ajustado (Cyl > 2.00D) {db_product.name}"
+                        db.add(param)
         else:
             lens_model = LensModel(
-                brand=db_product.brand or "Lente",
+                code=db_product.sku,
+                name=db_product.name,
+                brand=db_product.brand or db_product.name,
                 material=db_product.material or "Resina",
                 refractive_index=Decimal(str(db_product.refractive_index or "1.56")),
                 treatment=db_product.treatment or "Incolor",
                 diameter=db_product.diameter or 70,
-                cost_price=Decimal(str(db_product.cost_price or "25.00"))
+                cost_price=Decimal(str(db_product.cost_price or "25.00")),
+                sale_price=Decimal(str(db_product.sale_price or "75.00"))
             )
             db.add(lens_model)
             await db.flush()
@@ -197,15 +254,17 @@ async def delete_product(db: AsyncSession, product_id: uuid.UUID) -> bool:
     if not db_product:
         return False
         
-    # Remove também o LensModel associado se houver
-    if db_product.lens_model_id:
-        from backend.app.models.lens import LensModel
-        try:
-            await db.execute(LensModel.__table__.delete().where(LensModel.id == db_product.lens_model_id))
-        except Exception:
-            pass # mantém o LensModel se tiver chaves de inventário associadas para integridade histórica
-            
-    # Remove também os históricos de preços associados
+    lens_model_id = db_product.lens_model_id
+    db_product.lens_model_id = None
+    db.add(db_product)
+    await db.flush()
+
+    # Remove também o LensModel e a grade de estoque associada se for uma lente
+    if lens_model_id:
+        from backend.app.crud.lens import delete_lens_model
+        await delete_lens_model(db, lens_model_id)
+
+    # Remove também os históricos de preços associados ao produto comercial
     await db.execute(
         PriceHistory.__table__.delete().where(
             and_(
@@ -214,7 +273,11 @@ async def delete_product(db: AsyncSession, product_id: uuid.UUID) -> bool:
             )
         )
     )
-    await db.delete(db_product)
+
+    existing_p = await get_product(db, product_id)
+    if existing_p:
+        await db.delete(existing_p)
+
     await db.commit()
     return True
 
@@ -266,7 +329,7 @@ async def create_treatment(
         entity_id=db_treatment.id,
         price=db_treatment.price,
         version=1,
-        start_date=datetime.utcnow(),
+        start_date=datetime.now(timezone.utc),
         changed_by_id=user_id,
         change_reason=treatment_in.change_reason or "Cadastro inicial do tratamento"
     )
@@ -299,7 +362,7 @@ async def update_treatment(
         )
         last_hist = (await db.execute(hist_query)).scalars().first()
         if last_hist:
-            last_hist.end_date = datetime.utcnow()
+            last_hist.end_date = datetime.now(timezone.utc)
             db.add(last_hist)
             
         new_version = db_treatment.current_version + 1
@@ -310,7 +373,7 @@ async def update_treatment(
             entity_id=treatment_id,
             price=treatment_in.price,
             version=new_version,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(timezone.utc),
             changed_by_id=user_id,
             change_reason=treatment_in.change_reason or f"Reajuste de preço (v.{new_version})"
         )
@@ -391,7 +454,7 @@ async def create_technical_service(
         entity_id=db_service.id,
         price=db_service.price,
         version=1,
-        start_date=datetime.utcnow(),
+        start_date=datetime.now(timezone.utc),
         changed_by_id=user_id,
         change_reason=service_in.change_reason or "Cadastro inicial do serviço técnico"
     )
@@ -424,7 +487,7 @@ async def update_technical_service(
         )
         last_hist = (await db.execute(hist_query)).scalars().first()
         if last_hist:
-            last_hist.end_date = datetime.utcnow()
+            last_hist.end_date = datetime.now(timezone.utc)
             db.add(last_hist)
             
         new_version = db_service.current_version + 1
@@ -435,7 +498,7 @@ async def update_technical_service(
             entity_id=service_id,
             price=service_in.price,
             version=new_version,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(timezone.utc),
             changed_by_id=user_id,
             change_reason=service_in.change_reason or f"Reajuste de preço (v.{new_version})"
         )
