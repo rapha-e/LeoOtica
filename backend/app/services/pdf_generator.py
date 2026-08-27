@@ -1,921 +1,595 @@
 import io
 from datetime import datetime
-from typing import List, Dict, Any
-from reportlab.lib.pagesizes import A4
+from decimal import Decimal
+from typing import Dict, Any, List
+
+from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
+from reportlab.pdfgen import canvas
 
-def generate_purchase_pdf(alerts_data: List[Dict[str, Any]]) -> bytes:
-    """
-    Gera um relatório PDF elegante em formato A4 contendo
-    a lista detalhada de sugestão de compras de lentes para os fornecedores,
-    seguindo fielmente o layout de referência visual do usuário.
-    """
-    # Filtra apenas itens com recomendação de compra > 0
-    filtered_data = [item for item in alerts_data if item["suggested_purchase"] > 0]
-    
-    # Se não houver itens com sugestão, gera com todos para não ir vazio
-    if not filtered_data:
-        filtered_data = alerts_data
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_footer(num_pages)
+            super().showPage()
+        super().save()
+
+    def draw_footer(self, page_count):
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.setFillColor(colors.HexColor("#64748b"))
         
-    buffer = io.BytesIO()
-    
-    # Definição do documento A4 (largura utilizável = 515pt com margens de 40pt)
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
-    )
-    
-    story = []
+        # Linha divisória de rodapé
+        self.setStrokeColor(colors.HexColor("#cbd5e1"))
+        self.setLineWidth(0.5)
+        self.line(40, 35, 555, 35)
+        
+        # Textos de rodapé
+        now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+        self.drawString(40, 22, f"LeoÓtica 2.0 Enterprise — Emitido em: {now_str}")
+        self.drawRightString(555, 22, f"Página {self._pageNumber} de {page_count}")
+        self.restoreState()
+
+
+def _create_header(title: str, subtitle: str, lab_info: Dict[str, Any] = None) -> List[Any]:
     styles = getSampleStyleSheet()
-    
-    # Definição das fontes e estilos de parágrafo
-    font_family = 'Helvetica'
-    font_family_bold = 'Helvetica-Bold'
-    
-    style_logo = ParagraphStyle(
-        'BrandLogo',
-        fontName=font_family_bold,
-        fontSize=22,
-        leading=26,
-        textColor=colors.HexColor('#1F4E78'),
-        spaceAfter=2
+    lab_name = lab_info.get("name", "Nova LAB Ótica Industrial") if lab_info else "Nova LAB Ótica Industrial"
+    lab_cnpj = lab_info.get("cnpj", "58.032.958/0001-44") if lab_info else "58.032.958/0001-44"
+
+    header_title_style = ParagraphStyle(
+        'HeaderTitle',
+        parent=styles['Heading1'],
+        fontSize=14,
+        leading=16,
+        textColor=colors.HexColor("#0f172a"),
+        fontName='Helvetica-Bold'
     )
-    
-    style_logo_sub = ParagraphStyle(
-        'BrandLogoSub',
-        fontName=font_family,
+    header_subtitle_style = ParagraphStyle(
+        'HeaderSubtitle',
+        parent=styles['Normal'],
         fontSize=9,
         leading=11,
-        textColor=colors.HexColor('#595959'),
-        spaceAfter=15
+        textColor=colors.HexColor("#475569")
     )
-    
-    style_tag = ParagraphStyle(
-        'TagText',
-        fontName=font_family_bold,
-        fontSize=9,
-        leading=11,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor('#2A6BB8')
-    )
-    
-    style_sec_title = ParagraphStyle(
-        'SecTitle',
-        fontName=font_family_bold,
-        fontSize=11,
+    report_name_style = ParagraphStyle(
+        'ReportName',
+        parent=styles['Heading2'],
+        fontSize=12,
         leading=14,
-        textColor=colors.HexColor('#2A6BB8'),
-        spaceAfter=15
+        textColor=colors.HexColor("#0284c7"),
+        fontName='Helvetica-Bold',
+        alignment=2 # Right
     )
-    
-    style_box_title = ParagraphStyle(
-        'BoxTitle',
-        fontName=font_family_bold,
+    report_sub_style = ParagraphStyle(
+        'ReportSub',
+        parent=styles['Normal'],
         fontSize=8,
         leading=10,
-        textColor=colors.HexColor('#6B7280'),
-        spaceAfter=4
-    )
-    
-    style_box_req = ParagraphStyle(
-        'BoxReq',
-        fontName=font_family_bold,
-        fontSize=11,
-        leading=13,
-        textColor=colors.HexColor('#2A6BB8'),
-        spaceAfter=6
-    )
-    
-    style_box_label = ParagraphStyle(
-        'BoxLabel',
-        fontName=font_family_bold,
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor('#1F2937')
-    )
-    
-    style_box_val = ParagraphStyle(
-        'BoxVal',
-        fontName=font_family,
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor('#4B5563')
-    )
-    
-    style_box_val_bold = ParagraphStyle(
-        'BoxValBold',
-        fontName=font_family_bold,
-        fontSize=9,
-        leading=11,
-        textColor=colors.HexColor('#1F2937')
-    )
-    
-    style_tbl_header = ParagraphStyle(
-        'TblHeader',
-        fontName=font_family_bold,
-        fontSize=8,
-        leading=10,
-        textColor=colors.white,
-        alignment=TA_CENTER
-    )
-    
-    style_tbl_header_left = ParagraphStyle(
-        'TblHeaderLeft',
-        fontName=font_family_bold,
-        fontSize=8,
-        leading=10,
-        textColor=colors.white,
-        alignment=TA_LEFT
-    )
-    
-    style_tbl_cell = ParagraphStyle(
-        'TblCell',
-        fontName=font_family,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_CENTER
-    )
-    
-    style_tbl_cell_left = ParagraphStyle(
-        'TblCellLeft',
-        fontName=font_family,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_LEFT
-    )
-    
-    style_tbl_cell_bold = ParagraphStyle(
-        'TblCellBold',
-        fontName=font_family_bold,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_CENTER
-    )
-    
-    style_tbl_cell_bold_left = ParagraphStyle(
-        'TblCellBoldLeft',
-        fontName=font_family_bold,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_LEFT
-    )
-    
-    style_tbl_cell_red = ParagraphStyle(
-        'TblCellRed',
-        fontName=font_family_bold,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#DC2626'),
-        alignment=TA_CENTER
-    )
-    
-    style_tbl_cell_orange = ParagraphStyle(
-        'TblCellOrange',
-        fontName=font_family_bold,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#D97706'),
-        alignment=TA_CENTER
-    )
-    
-    style_tbl_cell_blue = ParagraphStyle(
-        'TblCellBlue',
-        fontName=font_family_bold,
-        fontSize=9,
-        leading=11,
-        textColor=colors.HexColor('#2A6BB8'),
-        alignment=TA_CENTER
-    )
-    
-    style_note_title = ParagraphStyle(
-        'NoteTitle',
-        fontName=font_family_bold,
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor('#78350F')
-    )
-    
-    style_note_text = ParagraphStyle(
-        'NoteText',
-        fontName=font_family,
-        fontSize=8.5,
-        leading=12,
-        textColor=colors.HexColor('#78350F')
+        textColor=colors.HexColor("#64748b"),
+        alignment=2 # Right
     )
 
-    # 1. CABEÇALHO (LOGO E ETIOQUETA DO PEDIDO)
-    logo_flowable = [
-        Paragraph("Nova Lab", style_logo),
-        Paragraph("MÓDULO DE AUTOMAÇÃO DE STOCK", style_logo_sub)
+    left_cell = [
+        Paragraph(f"<b>{lab_name}</b>", header_title_style),
+        Paragraph(f"CNPJ: {lab_cnpj} | Sistema MES/ERP", header_subtitle_style)
     ]
-    
-    # Etiqueta "PEDIDO DE REPOSIÇÃO AUTOMÁTICA" à direita
-    tag_table = Table(
-        [[Paragraph("PEDIDO DE REPOSIÇÃO AUTOMÁTICA", style_tag)]],
-        colWidths=[180],
-        rowHeights=[24]
-    )
-    tag_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#EBF2FA')),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    
-    header_table = Table(
-        [[logo_flowable, tag_table]],
-        colWidths=[315, 200]
-    )
+    right_cell = [
+        Paragraph(title.upper(), report_name_style),
+        Paragraph(subtitle, report_sub_style)
+    ]
+
+    header_table = Table([[left_cell, right_cell]], colWidths=[280, 235])
     header_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LINEBELOW', (0, 0), (-1, -1), 1.5, colors.HexColor("#0284c7")),
     ]))
-    story.append(header_table)
-    story.append(Spacer(1, 5))
 
-    # 2. CAIXAS DE INFORMAÇÕES (IDENTIFICAÇÃO & FORNECEDOR)
-    req_number = f"#REQ-{datetime.now().strftime('%Y%m%d')}-{len(filtered_data):03d}"
-    data_emissao = datetime.now().strftime("%d/%m/%Y %H:%M") + " (Horário de Brasília)"
-    
-    # Conteúdo da Caixa da Esquerda
-    info_left = [
-        Paragraph("IDENTIFICAÇÃO DA REQUISIÇÃO", style_box_title),
-        Paragraph(req_number, style_box_req),
-        Spacer(1, 3),
-        Table([
-            [Paragraph("DATA DE EMISSÃO", style_box_label)],
-            [Paragraph(data_emissao, style_box_val)],
-            [Spacer(1, 2)],
-            [Paragraph("ORIGEM DO PEDIDO", style_box_label)],
-            [Paragraph("Laboratório Central Nova Lab<br/>Brasília - DF", style_box_val)],
-        ], colWidths=[220], style=[
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 1),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
-        ])
-    ]
-    
-    # Conteúdo da Caixa da Direita
-    info_right = [
-        Paragraph("FORNECEDOR DESTINATÁRIO", style_box_title),
-        Paragraph("EssilorLuxottica Portugal / Brasil", style_box_val_bold),
-        Spacer(1, 3),
-        Table([
-            [Paragraph("CNPJ / NIF", style_box_label)],
-            [Paragraph("00.000.000/0001-00", style_box_val)],
-            [Spacer(1, 2)],
-            [Paragraph("CANAL DE INTEGRAÇÃO", style_box_label)],
-            [Paragraph("pedidos.b2b@essilorluxottica.com.br", style_box_val)],
-        ], colWidths=[220], style=[
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 1),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
-        ])
-    ]
-    
-    # Tabela principal de Informações (duas caixas lado a lado)
-    box_table = Table(
-        [[info_left, info_right]],
-        colWidths=[247, 248]
+    return [header_table, Spacer(1, 12)]
+
+
+# ==============================================================================
+# 1. DRE CONTÁBIL GERENCIAL (PDF)
+# ==============================================================================
+
+def generate_dre_pdf(dre_data: Dict[str, Any], lab_info: Dict[str, Any] = None) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=50
     )
-    box_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0F4F8')),
-        ('BOX', (0, 0), (0, 0), 0.5, colors.HexColor('#CBD5E1')),
-        ('BOX', (1, 0), (1, 0), 0.5, colors.HexColor('#CBD5E1')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 15),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 15),
-        ('TOPPADDING', (0, 0), (-1, -1), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-    ]))
-    
-    # Envolve em uma tabela com espaçamento
-    outer_box_table = Table([[box_table]], colWidths=[515])
-    outer_box_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
-    ]))
-    story.append(outer_box_table)
+    styles = getSampleStyleSheet()
+    story = []
 
-    # 3. TÍTULO DOS ITENS
-    story.append(Paragraph("Itens Necessários para Reposição (Abaixo do Nível de Segurança)", style_sec_title))
-    story.append(Spacer(1, 5))
+    period_str = f"Período: {dre_data.get('period_start', '')} até {dre_data.get('period_end', '')}"
+    story.extend(_create_header("Demonstração do Resultado (DRE)", period_str, lab_info))
 
-    # 4. TABELA DE PRODUTOS
-    headers = [
-        Paragraph("CÓDIGO SKU", style_tbl_header_left),
-        Paragraph("DESCRIÇÃO DO MODELO", style_tbl_header_left),
-        Paragraph("ÍNDICE", style_tbl_header),
-        Paragraph("ESFÉRICO", style_tbl_header),
-        Paragraph("CILÍNDRICO", style_tbl_header),
-        Paragraph("ATUAL", style_tbl_header),
-        Paragraph("MÍN.", style_tbl_header),
-        Paragraph("QTD. SOLICITADA", style_tbl_header)
-    ]
-    
-    table_data = [headers]
-    counter = 1
-    
-    for item in filtered_data:
-        sku_brand = item['brand'][:3].upper().replace(" ", "")
-        sku = f"LENS-{int(item['refractive_index']*100)}-{sku_brand}-{counter:03d}"
-        
-        brand_material = f"{item['brand']} {item['material']}"
-        desc = f"{item['brand']} {item['material']} {item['treatment']}"
-        
-        # Define estilo de cor para estoque atual
-        stock = item['quantity_available']
-        if stock == 0:
-            p_stock = Paragraph(f"{stock} un", style_tbl_cell_red)
-        elif stock <= item['reorder_point']:
-            p_stock = Paragraph(f"{stock} un", style_tbl_cell_orange)
-        else:
-            p_stock = Paragraph(f"{stock} un", style_tbl_cell)
-            
-        min_qty = int(item['reorder_point']) if item['reorder_point'] > 0 else 5
-        
-        row = [
-            Paragraph(sku, style_tbl_cell_bold_left),
-            Paragraph(desc, style_tbl_cell_left),
-            Paragraph(f"{item['refractive_index']:.2f}", style_tbl_cell),
-            Paragraph(f"{item['spherical']:+.2f}", style_tbl_cell),
-            Paragraph(f"{item['cylindrical']:+.2f}", style_tbl_cell),
-            p_stock,
-            Paragraph(f"{min_qty} un", style_tbl_cell),
-            Paragraph(f"{item['suggested_purchase']} un", style_tbl_cell_blue)
+    # Tabela do DRE
+    table_data = [
+        [
+            Paragraph("<b>CÓDIGO</b>", styles['Normal']),
+            Paragraph("<b>DESCRIÇÃO DA CONTA CONTÁBIL</b>", styles['Normal']),
+            Paragraph("<b>VALOR (R$)</b>", styles['Normal']),
+            Paragraph("<b>% RECEITA</b>", styles['Normal'])
         ]
-        table_data.append(row)
-        counter += 1
-        
-    col_widths = [80, 150, 42, 50, 50, 43, 40, 60]
-    
-    t = Table(table_data, colWidths=col_widths)
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2A6BB8')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
-        ('TOPPADDING', (0, 0), (-1, 0), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-    ]))
-    
-    # Zebrado
-    for i in range(1, len(table_data)):
-        bg_color = colors.HexColor('#F9FAFB') if i % 2 == 0 else colors.white
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, i), (-1, i), bg_color),
-            ('TOPPADDING', (0, i), (-1, i), 7),
-            ('BOTTOMPADDING', (0, i), (-1, i), 7),
-        ]))
-        
-    story.append(t)
-    story.append(Spacer(1, 20))
-
-    # 5. DIRETRIZES DE LOGÍSTICA
-    story.append(Paragraph("Diretrizes de Logística e Transição de Estados", style_sec_title))
-    story.append(Spacer(1, 5))
-
-    # 6. CAIXA DE NOTA AUTOMÁTICA (Fundo bege e barra lateral laranja)
-    note_content = [
-        Paragraph("Nota Automática do Sistema:", style_note_title),
-        Spacer(1, 4),
-        Paragraph(
-            "1. As dioptrias listadas acima atingiram ou ultrapassaram o limite crítico de ruptura (estoque abaixo do nível de segurança). Este lote foi projetado com base na taxa de consumo diário (daily_burn_rate) para suprir os próximos 15 dias de operação.<br/>"
-            "2. Para evitar duplicidade de pedidos por gatilhos repetidos, as respectivas células da Grade Óptica foram alteradas temporariamente para o estado STATUS_AWAITING_SUPPLIER até a recepção física da nota de faturamento.",
-            style_note_text
-        )
     ]
-    
-    # Tabela simulando a barra laranja lateral à esquerda
-    note_table = Table(
-        [[ "", note_content ]],
-        colWidths=[4, 511]
-    )
-    note_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#F97316')), # Barra laranja
-        ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#FFFBEB')), # Fundo bege
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (1, 0), (1, 0), 12),
-        ('BOTTOMPADDING', (1, 0), (1, 0), 12),
-        ('LEFTPADDING', (1, 0), (1, 0), 15),
-        ('RIGHTPADDING', (1, 0), (1, 0), 15),
-        ('TOPPADDING', (0, 0), (0, 0), 0),
-        ('BOTTOMPADDING', (0, 0), (0, 0), 0),
-        ('LEFTPADDING', (0, 0), (0, 0), 0),
-        ('RIGHTPADDING', (0, 0), (0, 0), 0),
-        ('BOX', (0, 0), (1, 0), 0.5, colors.HexColor('#FDE68A')), # Borda amarela clara ao redor do box
-    ]))
-    
-    story.append(note_table)
 
-    # Constrói o documento
-    doc.build(story)
-    
+    for item in dre_data.get("dre_statement", []):
+        is_grp = item.get("is_group", False)
+        is_neg = item.get("is_negative", False)
+        amt = Decimal(str(item.get("amount", 0.0)))
+        pct = item.get("percentage", 0.0)
+        desc = item.get("description", "")
+        code = item.get("account_code", "")
+
+        amt_formatted = f"R$ {amt:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        if is_neg and amt > 0:
+            amt_formatted = f"- {amt_formatted}"
+
+        desc_styled = f"<b>{desc}</b>" if is_grp else f"&nbsp;&nbsp;&nbsp;{desc}"
+        amt_styled = f"<b>{amt_formatted}</b>" if is_grp else amt_formatted
+
+        table_data.append([
+            code,
+            Paragraph(desc_styled, styles['Normal']),
+            Paragraph(amt_styled, styles['Normal']),
+            f"{pct:.1f}%"
+        ])
+
+    dre_table = Table(table_data, colWidths=[55, 270, 120, 70])
+    dre_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+    ]))
+
+    story.append(dre_table)
+    doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
     return buffer.getvalue()
 
 
-def generate_billing_pdf(cycle, laboratory=None) -> bytes:
-    """
-    Gera um PDF elegante em formato A4 contendo
-    a fatura de fechamento financeiro detalhado de uma ótica comercial,
-    seguindo o design premium do laboratório.
-    """
-    from datetime import datetime
-    
-    def format_dt(dt, format_str="%d/%m/%Y %H:%M"):
-        if not dt:
-            return "Pendente"
-        if isinstance(dt, str):
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%d"):
-                try:
-                    return datetime.strptime(dt.split("+")[0].split("Z")[0], fmt).strftime(format_str)
-                except ValueError:
-                    continue
-            return dt
-        return dt.strftime(format_str)
+# ==============================================================================
+# 2. RELATÓRIO DE ESTOQUE KARDEX VALORIZADO (PDF)
+# ==============================================================================
 
+def generate_inventory_kardex_pdf(kardex_data: Dict[str, Any], lab_info: Dict[str, Any] = None) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=35, rightMargin=35, topMargin=35, bottomMargin=45
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    kpis = kardex_data.get("kpis", {})
+    tot_val = Decimal(str(kpis.get("total_stock_value_cmp", 0.0)))
+    tot_val_fmt = f"R$ {tot_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    sub_title = f"Total Peças: {kpis.get('total_units_stock', 0)} un | Valorizado CMP: {tot_val_fmt}"
+
+    story.extend(_create_header("Posição Geral de Estoque (Kardex)", sub_title, lab_info))
+
+    table_data = [
+        [
+            Paragraph("<b>MATRIZ</b>", styles['Normal']),
+            Paragraph("<b>MODELO / LENTE</b>", styles['Normal']),
+            Paragraph("<b>TRATAMENTO</b>", styles['Normal']),
+            Paragraph("<b>DIOPTRIA / BASE</b>", styles['Normal']),
+            Paragraph("<b>SALDO</b>", styles['Normal']),
+            Paragraph("<b>CMP (R$)</b>", styles['Normal']),
+            Paragraph("<b>TOTAL (R$)</b>", styles['Normal'])
+        ]
+    ]
+
+    for it in kardex_data.get("items", [])[:300]: # Limite seguro para visualização
+        diop_parts = []
+        if it.get("base_curve") is not None:
+            diop_parts.append(f"Base {float(it['base_curve']):.2f}")
+        if it.get("spherical") is not None and it.get("cylindrical") is not None:
+            diop_parts.append(f"{float(it['spherical']):+.2f}/{float(it['cylindrical']):+.2f}")
+        if it.get("addition") is not None:
+            diop_parts.append(f"Add {float(it['addition']):+.2f}")
+        if it.get("eye"):
+            diop_parts.append(f"({it['eye']})")
+        diop_str = " ".join(diop_parts) or "Padrão"
+
+        cmp_u = Decimal(str(it.get("unit_cost_cmp", 0.0)))
+        tot_c = Decimal(str(it.get("total_value_cmp", 0.0)))
+
+        table_data.append([
+            it.get("matrix_type", ""),
+            Paragraph(it.get("model_name", "")[:28], styles['Normal']),
+            Paragraph(it.get("treatment", "")[:18], styles['Normal']),
+            Paragraph(diop_str, styles['Normal']),
+            f"{it.get('quantity_available', 0)} un",
+            f"R$ {cmp_u:.2f}",
+            f"R$ {tot_c:.2f}"
+        ])
+
+    table = Table(table_data, colWidths=[65, 125, 95, 100, 45, 50, 55])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('ALIGN', (4, 0), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+    ]))
+
+    story.append(table)
+    doc.build(story, canvasmaker=NumberedCanvas)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# ==============================================================================
+# 3. RELATÓRIO ANALÍTICO DE PRODUÇÃO & MES (PDF)
+# ==============================================================================
+
+def generate_production_pdf(prod_data: Dict[str, Any], lab_info: Dict[str, Any] = None) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=35, rightMargin=35, topMargin=35, bottomMargin=45
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    kpis = prod_data.get("kpis", {})
+    sub = f"Total OSs: {kpis.get('total_orders', 0)} | Concluídas: {kpis.get('orders_completed', 0)} | Em Produção: {kpis.get('orders_in_progress', 0)} | Refazimento: {kpis.get('orders_rework', 0)}"
+
+    story.extend(_create_header("Relatório Analítico de Produção (MES)", sub, lab_info))
+
+    table_data = [
+        [
+            Paragraph("<b>Nº OS</b>", styles['Normal']),
+            Paragraph("<b>ÓTICA / CLIENTE</b>", styles['Normal']),
+            Paragraph("<b>BANDEJA</b>", styles['Normal']),
+            Paragraph("<b>ROTA</b>", styles['Normal']),
+            Paragraph("<b>STATUS</b>", styles['Normal']),
+            Paragraph("<b>LEAD TIME</b>", styles['Normal']),
+            Paragraph("<b>VALOR (R$)</b>", styles['Normal'])
+        ]
+    ]
+
+    for o in prod_data.get("orders", [])[:250]:
+        lt_str = f"{o.get('lead_time_hours', 0.0)}h" if o.get('lead_time_hours') is not None else "-"
+        val = Decimal(str(o.get("total_amount", 0.0)))
+        route_short = "Expressa" if "EXPRESSA" in o.get("production_route", "") else ("CNC" if "SURFACAGEM" in o.get("production_route", "") else "Reparo")
+
+        table_data.append([
+            o.get("os_number", ""),
+            Paragraph(o.get("optical_store_name", "")[:26], styles['Normal']),
+            o.get("tray_number", "-") or "-",
+            route_short,
+            Paragraph(o.get("status", ""), styles['Normal']),
+            lt_str,
+            f"R$ {val:.2f}"
+        ])
+
+    table = Table(table_data, colWidths=[80, 140, 60, 60, 95, 50, 55])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 7.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('ALIGN', (5, 0), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+    ]))
+
+    story.append(table)
+    doc.build(story, canvasmaker=NumberedCanvas)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# ==============================================================================
+# 4. RELATÓRIO DE AGING LIST & INADIMPLÊNCIA (PDF)
+# ==============================================================================
+
+def generate_aging_pdf(aging_data: Dict[str, Any], lab_info: Dict[str, Any] = None) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=35, rightMargin=35, topMargin=35, bottomMargin=45
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    tot_rec = Decimal(str(aging_data.get("total_receivable", 0.0)))
+    tot_over = Decimal(str(aging_data.get("total_overdue", 0.0)))
+    rate = aging_data.get("delinquency_rate_pct", 0.0)
+
+    sub = f"Total a Receber: R$ {tot_rec:,.2f} | Vencido: R$ {tot_over:,.2f} | Inadimplência: {rate:.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+    story.extend(_create_header("Aging List & Inadimplência", sub, lab_info))
+
+    table_data = [
+        [
+            Paragraph("<b>ÓTICA CLIENTE</b>", styles['Normal']),
+            Paragraph("<b>DOCUMENTO</b>", styles['Normal']),
+            Paragraph("<b>VENCIMENTO</b>", styles['Normal']),
+            Paragraph("<b>ATRASO</b>", styles['Normal']),
+            Paragraph("<b>FAIXA AGING</b>", styles['Normal']),
+            Paragraph("<b>VALOR (R$)</b>", styles['Normal']),
+            Paragraph("<b>SALDO DEVEDOR</b>", styles['Normal'])
+        ]
+    ]
+
+    for t in aging_data.get("titles", [])[:300]:
+        due_str = t.get("due_date", "")
+        if isinstance(due_str, str) and "-" in due_str:
+            parts = due_str.split("-")
+            if len(parts) == 3:
+                due_str = f"{parts[2]}/{parts[1]}/{parts[0]}"
+
+        amt = Decimal(str(t.get("amount", 0.0)))
+        bal = Decimal(str(t.get("balance_due", 0.0)))
+        days = t.get("days_overdue", 0)
+
+        table_data.append([
+            Paragraph(t.get("store_name", "")[:28], styles['Normal']),
+            t.get("document_number", ""),
+            due_str,
+            f"{days} dias" if days > 0 else "Em dia",
+            t.get("aging_bucket", ""),
+            f"R$ {amt:.2f}",
+            f"R$ {bal:.2f}"
+        ])
+
+    table = Table(table_data, colWidths=[140, 80, 65, 55, 75, 60, 65])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 7.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('ALIGN', (5, 0), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+    ]))
+
+    story.append(table)
+    doc.build(story, canvasmaker=NumberedCanvas)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def generate_purchase_pdf(alerts_data: List[Dict[str, Any]], lab_info: Dict[str, Any] = None) -> bytes:
+    """
+    Gera PDF com a sugestão de compras do motor preditivo
+    """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=36,
+        bottomMargin=45
     )
+
     story = []
-    
-    # Fontes
-    font_family = 'Helvetica'
-    font_family_bold = 'Helvetica-Bold'
-    
-    # Estilos
-    style_logo = ParagraphStyle(
-        'BillingLogo',
-        fontName=font_family_bold,
-        fontSize=22,
-        leading=26,
-        textColor=colors.HexColor('#1F4E78'),
-        spaceAfter=2
-    )
-    style_logo_sub = ParagraphStyle(
-        'BillingLogoSub',
-        fontName=font_family,
-        fontSize=9,
-        leading=11,
-        textColor=colors.HexColor('#595959'),
-        spaceAfter=15
-    )
-    style_tag = ParagraphStyle(
-        'BillingTagText',
-        fontName=font_family_bold,
-        fontSize=9,
-        leading=11,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor('#10B981')
-    )
-    style_sec_title = ParagraphStyle(
-        'BillingSecTitle',
-        fontName=font_family_bold,
-        fontSize=11,
-        leading=14,
-        textColor=colors.HexColor('#1F4E78'),
-        spaceAfter=15
-    )
-    style_box_title = ParagraphStyle(
-        'BillingBoxTitle',
-        fontName=font_family_bold,
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor('#6B7280'),
-        spaceAfter=4
-    )
-    style_box_req = ParagraphStyle(
-        'BillingBoxReq',
-        fontName=font_family_bold,
-        fontSize=11,
-        leading=13,
-        textColor=colors.HexColor('#1F4E78'),
-        spaceAfter=6
-    )
-    style_box_label = ParagraphStyle(
-        'BillingBoxLabel',
-        fontName=font_family_bold,
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor('#1F2937')
-    )
-    style_box_val = ParagraphStyle(
-        'BillingBoxVal',
-        fontName=font_family,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#4B5563')
-    )
-    style_box_val_bold = ParagraphStyle(
-        'BillingBoxValBold',
-        fontName=font_family_bold,
-        fontSize=9,
-        leading=11,
-        textColor=colors.HexColor('#1F2937')
-    )
-    style_tbl_header = ParagraphStyle(
-        'BillingTblHeader',
-        fontName=font_family_bold,
-        fontSize=8,
-        leading=10,
-        textColor=colors.white,
-        alignment=TA_CENTER
-    )
-    style_tbl_header_left = ParagraphStyle(
-        'BillingTblHeaderLeft',
-        fontName=font_family_bold,
-        fontSize=8,
-        leading=10,
-        textColor=colors.white,
-        alignment=TA_LEFT
-    )
-    style_tbl_cell = ParagraphStyle(
-        'BillingTblCell',
-        fontName=font_family,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_CENTER
-    )
-    style_tbl_cell_left = ParagraphStyle(
-        'BillingTblCellLeft',
-        fontName=font_family,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_LEFT
-    )
-    style_tbl_cell_bold = ParagraphStyle(
-        'BillingTblCellBold',
-        fontName=font_family_bold,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_RIGHT
-    )
-    style_note_title = ParagraphStyle(
-        'BillingNoteTitle',
-        fontName=font_family_bold,
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor('#065F46')
-    )
-    style_note_text = ParagraphStyle(
-        'BillingNoteText',
-        fontName=font_family,
-        fontSize=8.5,
-        leading=12,
-        textColor=colors.HexColor('#065F46')
-    )
+    story.extend(_create_header("PLANO DE COMPRAS PREDITIVO (SUPPLY CHAIN)", "Sugestões calculadas por consumo diário, lead time e estoque de segurança", lab_info))
 
-    # 1. CABEÇALHO (LOGO E ETIQUETA)
-    logo_flowable = [
-        Paragraph(laboratory.name if laboratory else "Nova Lab", style_logo),
-        Paragraph("MÓDULO DE CONTROLE FINANCEIRO", style_logo_sub)
-    ]
-    
-    status_text = "PAGO" if cycle.status == "PAGO" else "AGUARDANDO QUITAÇÃO"
-    tag_bg = colors.HexColor('#D1FAE5') if cycle.status == "PAGO" else colors.HexColor('#FEF3C7')
-    tag_border = colors.HexColor('#A7F3D0') if cycle.status == "PAGO" else colors.HexColor('#FDE68A')
-    tag_text_color = colors.HexColor('#047857') if cycle.status == "PAGO" else colors.HexColor('#D97706')
-    
-    style_tag_dynamic = ParagraphStyle(
-        'BillingTagDynamic',
-        parent=style_tag,
-        textColor=tag_text_color
-    )
-    
-    tag_table = Table(
-        [[Paragraph(status_text, style_tag_dynamic)]],
-        colWidths=[180],
-        rowHeights=[24]
-    )
-    tag_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), tag_bg),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOX', (0, 0), (-1, -1), 0.5, tag_border),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    
-    header_table = Table(
-        [[logo_flowable, tag_table]],
-        colWidths=[315, 200]
-    )
-    header_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
-    ]))
-    story.append(header_table)
-    story.append(Spacer(1, 5))
+    styles = getSampleStyleSheet()
+    filtered = [a for a in alerts_data if a.get("suggested_purchase", 0) > 0]
+    total_items = len(filtered)
+    total_qty = sum(a.get("suggested_purchase", 0) for a in filtered)
 
-    # 2. CAIXAS DE INFORMAÇÕES (FECHAMENTO & DESTINATÁRIO)
-    cycle_code = f"#FAT-{cycle.id.hex[:8].upper()}" if cycle.id else "#FAT-N/A"
-    data_emissao = format_dt(cycle.created_at, "%d/%m/%Y %H:%M")
-    periodo = f"{format_dt(cycle.start_date, '%d/%m/%Y')} a {format_dt(cycle.end_date, '%d/%m/%Y')}"
-    data_pagamento = format_dt(cycle.paid_at, "%d/%m/%Y %H:%M") if cycle.paid_at else "Pendente"
-    
-    # Conteúdo da Caixa da Esquerda (Dados do Fechamento)
-    info_left = [
-        Paragraph("INFORMAÇÕES DA COBRANÇA", style_box_title),
-        Paragraph(cycle_code, style_box_req),
-        Spacer(1, 3),
-        Table([
-            [Paragraph("PERÍODO DO FECHAMENTO", style_box_label)],
-            [Paragraph(periodo, style_box_val)],
-            [Spacer(1, 2)],
-            [Paragraph("DATA DE EMISSÃO", style_box_label)],
-            [Paragraph(data_emissao, style_box_val)],
-            [Spacer(1, 2)],
-            [Paragraph("DATA DE LIQUIDAÇÃO", style_box_label)],
-            [Paragraph(data_pagamento, style_box_val)],
-        ], colWidths=[220], style=[
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 1),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
-        ])
-    ]
-    
-    # Conteúdo da Caixa da Direita (Ótica Comercial Destinatária)
-    store_name = (cycle.optical_store.trade_name or "Ótica Desconhecida") if cycle.optical_store else "Ótica Desconhecida"
-    store_cnpj = (cycle.optical_store.cnpj or "-") if cycle.optical_store else "-"
-    store_email = (cycle.optical_store.email or "-") if cycle.optical_store else "-"
-    store_address = (cycle.optical_store.address or "-") if cycle.optical_store else "-"
-    
-    info_right = [
-        Paragraph("CLIENTE DESTINATÁRIO", style_box_title),
-        Paragraph(store_name, style_box_val_bold),
-        Spacer(1, 3),
-        Table([
-            [Paragraph("CNPJ / IE", style_box_label)],
-            [Paragraph(store_cnpj, style_box_val)],
-            [Spacer(1, 2)],
-            [Paragraph("E-MAIL DE CONTATO", style_box_label)],
-            [Paragraph(store_email, style_box_val)],
-            [Spacer(1, 2)],
-            [Paragraph("ENDEREÇO COMERCIAL", style_box_label)],
-            [Paragraph(store_address, style_box_val)],
-        ], colWidths=[220], style=[
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 1),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
-        ])
-    ]
-    
-    # Tabela principal de Informações (duas caixas lado a lado)
-    box_table = Table(
-        [[info_left, info_right]],
-        colWidths=[247, 248]
-    )
-    box_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F3F4F6')),
-        ('BOX', (0, 0), (0, 0), 0.5, colors.HexColor('#E5E7EB')),
-        ('BOX', (1, 0), (1, 0), 0.5, colors.HexColor('#E5E7EB')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 15),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 15),
-        ('TOPPADDING', (0, 0), (-1, -1), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-    ]))
-    
-    outer_box_table = Table([[box_table]], colWidths=[515])
-    outer_box_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
-    ]))
-    story.append(outer_box_table)
-
-    # 3. TÍTULO DOS ITENS
-    story.append(Paragraph("Detalhamento de Itens e Serviços na Fatura (Padrão Catálogo)", style_sec_title))
-    story.append(Spacer(1, 5))
-
-    # 4. TABELA DE ITENS COM DETALHAMENTO DO ANEXO 1 (ITEM/SERVIÇO, DESCRIÇÃO, TIPO, QTD, VALOR)
-    headers = [
-        Paragraph("ITEM / SERVIÇO", style_tbl_header_left),
-        Paragraph("DESCRIÇÃO DO CATÁLOGO", style_tbl_header_left),
-        Paragraph("TIPO", style_tbl_header),
-        Paragraph("QTD", style_tbl_header),
-        Paragraph("VALOR (R$)", style_tbl_header)
-    ]
-    
-    table_data = [headers]
-    
-    style_os_header = ParagraphStyle(
-        'BillingOsHeader',
-        fontName=font_family_bold,
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor('#1F4E78'),
-        alignment=TA_LEFT
-    )
-
-    for item in cycle.items:
-        os_num = getattr(item, "os_number", None) or "OS-N/A"
-        client = getattr(item, "client_name", None) or "Consumidor Final"
-        
-        # Linha separadora de cabeçalho da OS
-        os_hdr_row = [
-            Paragraph(f"<b>OS: {os_num}</b> — Paciente / Cliente: <b>{client}</b>", style_os_header),
-            "", "", "",
-            Paragraph(f"<b>R$ {(item.amount or 0.0):,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_tbl_cell_bold)
-        ]
-        table_data.append(os_hdr_row)
-
-        detailed_list = getattr(item, "detailed_items", []) or []
-        if detailed_list:
-            for detail in detailed_list:
-                d_name = getattr(detail, "name", "") or "Item"
-                d_desc = getattr(detail, "description", "") or "-"
-                d_type = getattr(detail, "item_type", "") or "Serviço"
-                d_qty = getattr(detail, "quantity", 1)
-                d_price = float(getattr(detail, "total_price", 0.0) or 0.0)
-                
-                qty_str = f"{d_qty} un" if d_type == "Lente" else f"{d_qty}"
-                fmt_price = f"R$ {d_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-                row = [
-                    Paragraph(f"  • {d_name}", style_tbl_cell_left),
-                    Paragraph(d_desc, style_tbl_cell_left),
-                    Paragraph(d_type, style_tbl_cell),
-                    Paragraph(qty_str, style_tbl_cell),
-                    Paragraph(fmt_price, style_tbl_cell)
-                ]
-                table_data.append(row)
-        else:
-            # Fallback de compatibilidade
-            l_txt = getattr(item, "lens_type", "Lente Padrão Laboratorial")
-            l_price = getattr(item, "lens_price", item.amount or 0.0) or 0.0
-            fmt_lprice = f"R$ {l_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            table_data.append([
-                Paragraph(f"  • {l_txt}", style_tbl_cell_left),
-                Paragraph("Lente Oftálmica Visão Simples / Digital", style_tbl_cell_left),
-                Paragraph("Lente", style_tbl_cell),
-                Paragraph("2 un", style_tbl_cell),
-                Paragraph(fmt_lprice, style_tbl_cell)
-            ])
-            
-            s_txt = getattr(item, "services", None)
-            s_price = getattr(item, "service_price", 0.0) or 0.0
-            if s_txt:
-                fmt_sprice = f"R$ {s_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                table_data.append([
-                    Paragraph(f"  • {s_txt}", style_tbl_cell_left),
-                    Paragraph("Montagem e Acabamento de Precisão", style_tbl_cell_left),
-                    Paragraph("Serviço", style_tbl_cell),
-                    Paragraph("1", style_tbl_cell),
-                    Paragraph(fmt_sprice, style_tbl_cell)
-                ])
-
-            t_txt = getattr(item, "treatments", None)
-            t_price = getattr(item, "treatment_price", 0.0) or 0.0
-            if t_txt and t_txt != "Incolor / Sem Tratamento":
-                fmt_tprice = f"R$ {t_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                table_data.append([
-                    Paragraph(f"  • {t_txt}", style_tbl_cell_left),
-                    Paragraph("Tratamento de Superfície Lente", style_tbl_cell_left),
-                    Paragraph("Tratamento", style_tbl_cell),
-                    Paragraph("1", style_tbl_cell),
-                    Paragraph(fmt_tprice, style_tbl_cell)
-                ])
-        
-    col_widths = [135, 180, 60, 50, 90]
-    
-    t = Table(table_data, colWidths=col_widths)
-
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E78')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
-        ('TOPPADDING', (0, 0), (-1, 0), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-    ]))
-    
-    # Estilização das linhas (zebrado + fundos para cabeçalhos de OS)
-    for i in range(1, len(table_data)):
-        row_cells = table_data[i]
-        # Se for linha de cabeçalho de OS (4 células vazias/mescladas)
-        if len(row_cells) == 5 and row_cells[1] == "" and row_cells[2] == "":
-            t.setStyle(TableStyle([
-                ('SPAN', (0, i), (3, i)),
-                ('BACKGROUND', (0, i), (-1, i), colors.HexColor('#EBF2FA')),
-                ('TOPPADDING', (0, i), (-1, i), 6),
-                ('BOTTOMPADDING', (0, i), (-1, i), 6),
-            ]))
-        else:
-            bg_color = colors.HexColor('#F9FAFB') if i % 2 == 0 else colors.white
-            t.setStyle(TableStyle([
-                ('BACKGROUND', (0, i), (-1, i), bg_color),
-                ('TOPPADDING', (0, i), (-1, i), 5),
-                ('BOTTOMPADDING', (0, i), (-1, i), 5),
-            ]))
-        
-    story.append(t)
-    story.append(Spacer(1, 15))
-    
-    # Totalizador Geral
-    total_val = cycle.total_amount or 0.0
-    formatted_total = f"R$ {total_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    style_total_label = ParagraphStyle(
-        'BillingTotalLabel',
-        fontName=font_family_bold,
-        fontSize=11,
-        textColor=colors.HexColor('#1F2937'),
-        alignment=TA_LEFT
-    )
-    style_total_val = ParagraphStyle(
-        'BillingTotalVal',
-        fontName=font_family_bold,
-        fontSize=13,
-        textColor=colors.HexColor('#1F4E78'),
-        alignment=TA_RIGHT
-    )
-    total_table = Table(
+    kpis_data = [
         [
-            [Paragraph("TOTAL DA FATURA:", style_total_label), Paragraph(formatted_total, style_total_val)]
-        ],
-        colWidths=[385, 130]
-    )
-    total_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LINEABOVE', (0, 0), (-1, -1), 1.5, colors.HexColor('#1F4E78')),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-    ]))
-    story.append(total_table)
-    story.append(Spacer(1, 20))
-
-    # 5. CAIXA DE NOTA COMERCIAL (Instruções)
-    note_content = [
-        Paragraph("Instruções de Pagamento e Quitação:", style_note_title),
-        Spacer(1, 4),
-        Paragraph(
-            f"1. Efetue a transferência ou depósito para a conta bancária padrão do laboratório {laboratory.name if laboratory else 'Nova Lab'} no banco parceiro.<br/>"
-            "2. O prazo padrão para compensação e conciliação do lote faturado é de até 2 dias úteis a partir do envio do comprovante pelo Portal do Lojista.<br/>"
-            "3. Após a confirmação e quitação deste ciclo, o status será alterado para PAGO, liberando o respectivo selo no histórico de faturas.",
-            style_note_text
-        )
+            Paragraph("<b>Total de Itens Sugeridos:</b>", styles['Normal']),
+            Paragraph(f"<b>{total_items} SKUs</b>", styles['Normal']),
+            Paragraph("<b>Volume Total de Peças:</b>", styles['Normal']),
+            Paragraph(f"<font color='#0284c7'><b>{total_qty} unidades</b></font>", styles['Normal'])
+        ]
     ]
-    
-    note_table = Table(
-        [[ "", note_content ]],
-        colWidths=[4, 511]
-    )
-    note_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#10B981')), # Barra verde
-        ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#ECFDF5')), # Fundo verde
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (1, 0), (1, 0), 12),
-        ('BOTTOMPADDING', (1, 0), (1, 0), 12),
-        ('LEFTPADDING', (1, 0), (1, 0), 15),
-        ('RIGHTPADDING', (1, 0), (1, 0), 15),
-        ('TOPPADDING', (0, 0), (0, 0), 0),
-        ('BOTTOMPADDING', (0, 0), (0, 0), 0),
-        ('LEFTPADDING', (0, 0), (0, 0), 0),
-        ('RIGHTPADDING', (0, 0), (0, 0), 0),
-        ('BOX', (0, 0), (1, 0), 0.5, colors.HexColor('#A7F3D0')),
+    t_kpi = Table(kpis_data, colWidths=[150, 100, 150, 120])
+    t_kpi.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
+        ('PADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
     ]))
-    
-    story.append(note_table)
+    story.append(t_kpi)
+    story.append(Spacer(1, 12))
 
-    # Constrói o documento
-    doc.build(story)
-    
+    table_data = [
+        [
+            Paragraph("<b>PRODUTO / MODELO</b>", styles['Normal']),
+            Paragraph("<b>GRAU / ESF</b>", styles['Normal']),
+            Paragraph("<b>CIL</b>", styles['Normal']),
+            Paragraph("<b>ESTOQUE</b>", styles['Normal']),
+            Paragraph("<b>PONTO PEDIDO</b>", styles['Normal']),
+            Paragraph("<b>SUGESTÃO</b>", styles['Normal'])
+        ]
+    ]
+
+    for item in filtered[:350]:
+        table_data.append([
+            Paragraph(str(item.get("model_name", ""))[:28], styles['Normal']),
+            f"{item.get('spherical', 0.0):.2f}",
+            f"{item.get('cylindrical', 0.0):.2f}",
+            f"{item.get('current_stock', 0)} un",
+            f"{item.get('reorder_point', 0)} un",
+            f"{item.get('suggested_purchase', 0)} un"
+        ])
+
+    if len(table_data) == 1:
+        table_data.append([Paragraph("Nenhum item com necessidade de compra no momento.", styles['Normal']), "", "", "", "", ""])
+
+    table = Table(table_data, colWidths=[180, 65, 65, 70, 75, 65])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+    ]))
+
+    story.append(table)
+    doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
     return buffer.getvalue()
+
+
+def generate_billing_pdf(cycle: Any, laboratory: Any = None) -> bytes:
+    """
+    Gera o PDF do Fechamento de Faturamento Financeiro (Fatura / Extrato de Cobrança)
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=36,
+        bottomMargin=45
+    )
+
+    lab_info = {
+        "name": getattr(laboratory, "name", "Nova LAB Ótica Industrial") or "Nova LAB Ótica Industrial",
+        "cnpj": getattr(laboratory, "cnpj", "58.032.958/0001-44") or "58.032.958/0001-44",
+        "telephone": getattr(laboratory, "telephone", "61 99266-7281") or "61 99266-7281",
+        "address": getattr(laboratory, "address", "") or ""
+    }
+
+    story = []
+    story.extend(_create_header("EXTRATO DE FATURAMENTO & FECHAMENTO", f"Fatura Ref.: #{str(cycle.id)[:8]} — Ciclo de Cobrança", lab_info))
+
+    styles = getSampleStyleSheet()
+
+    # Informações da Ótica Cliente e Período
+    store = getattr(cycle, "optical_store", None)
+    store_name = getattr(store, "corporate_name", "") or getattr(store, "trade_name", "Cliente")
+    store_cnpj = getattr(store, "cnpj", "")
+    start_dt = getattr(cycle, "start_date", None)
+    end_dt = getattr(cycle, "end_date", None)
+
+    start_str = start_dt.strftime("%d/%m/%Y") if hasattr(start_dt, "strftime") else str(start_dt or "")
+    end_str = end_dt.strftime("%d/%m/%Y") if hasattr(end_dt, "strftime") else str(end_dt or "")
+
+    client_info_data = [
+        [
+            Paragraph("<b>ÓTICA / CLIENTE:</b>", styles['Normal']),
+            Paragraph(f"<b>{store_name}</b> (CNPJ: {store_cnpj})", styles['Normal']),
+            Paragraph("<b>PERÍODO:</b>", styles['Normal']),
+            Paragraph(f"{start_str} a {end_str}", styles['Normal'])
+        ],
+        [
+            Paragraph("<b>STATUS:</b>", styles['Normal']),
+            Paragraph(f"<b>{getattr(cycle, 'status', 'PENDENTE')}</b>", styles['Normal']),
+            Paragraph("<b>DATA EMISSÃO:</b>", styles['Normal']),
+            Paragraph(datetime.now().strftime("%d/%m/%Y %H:%M"), styles['Normal'])
+        ]
+    ]
+
+    t_client = Table(client_info_data, colWidths=[110, 200, 80, 130])
+    t_client.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ('PADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+    ]))
+    story.append(t_client)
+    story.append(Spacer(1, 10))
+
+    # Tabela de Ordens / Itens Faturados
+    table_data = [
+        [
+            Paragraph("<b>Nº OS</b>", styles['Normal']),
+            Paragraph("<b>PEDIDO</b>", styles['Normal']),
+            Paragraph("<b>PACIENTE / CLIENTE</b>", styles['Normal']),
+            Paragraph("<b>DATA</b>", styles['Normal']),
+            Paragraph("<b>VALOR LENTE</b>", styles['Normal']),
+            Paragraph("<b>VALOR SERV.</b>", styles['Normal']),
+            Paragraph("<b>TOTAL</b>", styles['Normal'])
+        ]
+    ]
+
+    items = getattr(cycle, "items", [])
+    for it in items:
+        os_rel = getattr(it, "service_order", None)
+        os_num = getattr(os_rel, "os_number", str(it.service_order_id)[:8]) if os_rel else str(it.service_order_id)[:8]
+        client_order = getattr(os_rel, "client_order_number", "") or ""
+        patient = getattr(os_rel, "client_name", "") or "-"
+        dt_val = getattr(os_rel, "created_at", getattr(it, "created_at", None))
+        dt_str = dt_val.strftime("%d/%m") if hasattr(dt_val, "strftime") else ""
+
+        lens_p = Decimal(str(getattr(it, "lens_price", 0.0) or 0.0))
+        serv_p = Decimal(str(getattr(it, "service_price", 0.0) or 0.0))
+        tot_p = Decimal(str(getattr(it, "final_price", 0.0) or (lens_p + serv_p)))
+
+        table_data.append([
+            f"#{os_num}",
+            client_order,
+            Paragraph(patient[:20], styles['Normal']),
+            dt_str,
+            f"R$ {lens_p:.2f}",
+            f"R$ {serv_p:.2f}",
+            f"R$ {tot_p:.2f}"
+        ])
+
+    table = Table(table_data, colWidths=[65, 65, 130, 50, 70, 70, 70])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('ALIGN', (4, 0), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 10))
+
+    # Totais Finais
+    subtotal = Decimal(str(getattr(cycle, "total_amount", 0.0) or 0.0))
+    discount = Decimal(str(getattr(cycle, "discount_amount", 0.0) or 0.0))
+    final_amt = Decimal(str(getattr(cycle, "final_amount", 0.0) or (subtotal - discount)))
+
+    totals_data = [
+        [Paragraph("<b>Subtotal Bruto:</b>", styles['Normal']), f"R$ {subtotal:.2f}"],
+        [Paragraph("<b>Desconto Aplicado:</b>", styles['Normal']), f"- R$ {discount:.2f}"],
+        [Paragraph("<b>VALOR TOTAL LÍQUIDO A PAGAR:</b>", styles['Normal']), f"<b>R$ {final_amt:.2f}</b>"]
+    ]
+
+    t_totals = Table(totals_data, colWidths=[380, 140])
+    t_totals.setStyle(TableStyle([
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('PADDING', (0, 0), (-1, -1), 5),
+        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor("#f1f5f9")),
+        ('LINEABOVE', (0, 2), (-1, 2), 1, colors.HexColor("#0284c7")),
+    ]))
+    story.append(t_totals)
+
+    doc.build(story, canvasmaker=NumberedCanvas)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+

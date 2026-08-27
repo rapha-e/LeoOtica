@@ -356,6 +356,16 @@ export const DegreePolicyService = {
   savePolicy: (policyData, cascadeUpdate = false) => api.post(`/degree-policy/?cascade_update=${cascadeUpdate}`, policyData),
 };
 
+export const ReportService = {
+  getProductionAnalytic: (params = {}) => api.get('/reports/production/analytic', { params }),
+  getInventoryKardex: (params = {}) => api.get('/reports/inventory/kardex', { params }),
+  getCommercialRanking: (params = {}) => api.get('/reports/commercial/ranking', { params }),
+  getFinancialDRE: (params = {}) => api.get('/reports/financial/dre', { params }),
+  getFinancialAging: (params = {}) => api.get('/reports/financial/aging', { params }),
+  exportPdf: (params = {}) => api.get('/reports/export/pdf', { params, responseType: 'blob' }),
+  exportExcel: (params = {}) => api.get('/reports/export/excel', { params, responseType: 'blob' }),
+};
+
 export default api;
 
 

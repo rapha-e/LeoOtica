@@ -3,7 +3,7 @@ from backend.app.api.endpoints import (
     lens_models, inventory, movements, nfe, alerts, os as endpoints_os, analytics as endpoints_analytics,
     partner, factory, auth, optical_stores, financial_catalog, customer_price, billing, users, laboratory,
     search as endpoints_search, tv as endpoints_tv, backup, financial_corp, system_parameters, supplier_order, blocks, orders,
-    degree_policy
+    degree_policy, reports, reports_export
 )
 
 
@@ -37,6 +37,10 @@ api_router.include_router(customer_price.router, prefix="/price-tables", tags=["
 api_router.include_router(billing.router, prefix="/billing", tags=["Fechamento Financeiro"], dependencies=[Depends(get_current_active_operator)])
 api_router.include_router(laboratory.router, prefix="/laboratory", tags=["Perfil do Laboratório"], dependencies=[Depends(get_current_active_operator)])
 
+# Central de Relatórios & BI e Exportações
+api_router.include_router(reports.router, prefix="/reports", tags=["Central de Relatórios & BI"], dependencies=[Depends(get_current_active_operator)])
+api_router.include_router(reports_export.router, prefix="/reports/export", tags=["Exportação de Relatórios (PDF & Excel)"], dependencies=[Depends(get_current_active_operator)])
+
 # Rotas administrativas restritas a Administradores de fábrica
 api_router.include_router(partner.admin_router, prefix="/admin/partners", tags=["Administração de Parceiros"], dependencies=[Depends(get_current_active_admin)])
 api_router.include_router(users.router, prefix="/admin/users", tags=["Gerenciamento de Usuários"], dependencies=[Depends(get_current_active_admin)])
@@ -44,8 +48,6 @@ api_router.include_router(backup.router, prefix="/admin/backups", tags=["Backup 
 api_router.include_router(financial_corp.router, prefix="/finance-corp", tags=["Financeiro Corporativo"], dependencies=[Depends(get_current_active_operator)])
 api_router.include_router(system_parameters.router, prefix="/system-parameters", tags=["Parâmetros do Sistema"], dependencies=[Depends(get_current_active_operator)])
 api_router.include_router(supplier_order.router, prefix="/supplier-orders", tags=["Pedidos no Fornecedor"], dependencies=[Depends(get_current_active_operator)])
-
-
 
 # Pesquisa global (requer autenticacao de operador)
 api_router.include_router(endpoints_search.router, prefix="/search", tags=["Pesquisa Global"])

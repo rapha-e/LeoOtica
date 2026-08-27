@@ -508,27 +508,6 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
         </button>
 
         <button
-          onClick={() => { setActiveSubTab('blocks'); setSearchQuery(''); }}
-          style={{
-            padding: '12px 20px',
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeSubTab === 'blocks' ? '3px solid hsl(var(--primary))' : '3px solid transparent',
-            color: activeSubTab === 'blocks' ? 'hsl(var(--primary))' : 'hsl(var(--text-muted))',
-            fontWeight: activeSubTab === 'blocks' ? 700 : 500,
-            cursor: 'pointer',
-            fontSize: '0.95rem',
-            transition: 'all 0.2s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          <Box size={16} /> Blocos Semiacabados
-        </button>
-
-
-        <button
           onClick={() => { setActiveSubTab('services'); setSearchQuery(''); }}
           style={{
             padding: '12px 20px',
@@ -554,7 +533,7 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
             <input
               type="text"
               className="form-control"
-              placeholder={`Buscar por nome${activeSubTab === 'products' ? ' ou SKU' : activeSubTab === 'blocks' ? ' ou Marca' : ''}...`}
+              placeholder={`Buscar por nome${activeSubTab === 'products' ? ' ou SKU' : ''}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ paddingLeft: '45px' }}

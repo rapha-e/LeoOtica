@@ -34,6 +34,8 @@ async def clean_operational_records():
         "billing_items",
         "billing_cycles",
         "nfe_saida",
+        "financial_transactions",
+        "accounts_payable",
         "accounts_receivable",
         "commercial_order_items",
         "commercial_orders",

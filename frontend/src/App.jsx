@@ -36,6 +36,7 @@ import OSDetail from './components/OSDetail';
 
 import FilaOrdensBloqueadas from './components/FilaOrdensBloqueadas';
 import DashboardDRE from './components/DashboardDRE';
+import RelatoriosHub from './pages/reports/RelatoriosHub';
 import { TrendingUp, Sparkles, Users, ChevronDown, Plus, Wrench, Settings, Building2, BarChart3, Lock } from 'lucide-react';
 
 
@@ -576,6 +577,23 @@ function App() {
             )}
           </div>
 
+          {/* GRUPO 5: Central de Relatórios & BI */}
+          <div className="header-dropdown">
+            <button 
+              type="button"
+              className={`dropdown-trigger ${activeTab === 'relatorios-bi' ? 'active' : ''}`}
+              style={{
+                background: activeTab === 'relatorios-bi' ? 'rgba(14, 165, 233, 0.25)' : 'transparent',
+                borderColor: activeTab === 'relatorios-bi' ? '#38bdf8' : undefined,
+                color: activeTab === 'relatorios-bi' ? '#38bdf8' : undefined,
+                fontWeight: 700
+              }}
+              onClick={() => { setActiveTab('relatorios-bi'); setOpenDropdown(null); }}
+            >
+              <BarChart3 size={16} style={{ color: '#38bdf8' }} /> Relatórios & BI
+            </button>
+          </div>
+
         </nav>
 
         {/* Informações do usuário logado */}
@@ -735,6 +753,10 @@ function App() {
 
         {activeTab === 'admin-users' && currentUser.role === 'Administrador' && (
           <GerenciamentoUsuarios />
+        )}
+
+        {activeTab === 'relatorios-bi' && (
+          <RelatoriosHub currentUser={currentUser} />
         )}
       </main>
 
