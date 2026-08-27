@@ -1,4 +1,4 @@
-﻿# === Python ===
+# === Python ===
 __pycache__/
 *.py[cod]
 *.pyo
@@ -61,3 +61,7 @@ alembic/versions/*.pyc
 # === Uploads locais ===
 uploads/*
 !uploads/.gitkeep
+
+# === Scratch / Temp ===
+scratch/
+*.png

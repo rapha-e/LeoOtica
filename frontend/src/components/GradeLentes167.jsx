@@ -66,7 +66,7 @@ const GradeLentes167 = ({ onOpenManualInsert }) => {
         if (item.lens_model?.matrix_type !== 'GRADE_167') return false;
         if (item.base_curve !== null && item.base_curve !== undefined) return false;
         if (item.addition !== null && item.addition !== undefined) return false;
-        if (item.eye !== null && item.eye !== undefined) return false;
+        if (item.eye !== null && item.eye !== undefined && item.eye !== 'AMBOS') return false;
         if (modelId && String(item.lens_model_id || item.lens_model?.id) !== String(modelId)) return false;
         return true;
       });
@@ -102,10 +102,10 @@ const GradeLentes167 = ({ onOpenManualInsert }) => {
       if (item.lens_model?.matrix_type !== 'GRADE_167') return false;
       if (item.base_curve !== null && item.base_curve !== undefined) return false;
       if (item.addition !== null && item.addition !== undefined) return false;
-      if (item.eye !== null && item.eye !== undefined) return false;
-      const itemSph = Math.abs(parseFloat(item.spherical));
+      if (item.eye !== null && item.eye !== undefined && item.eye !== 'AMBOS') return false;
+      const itemSph = Math.abs(parseFloat(item.spherical || 0));
       const targetSph = Math.abs(sph);
-      const itemCyl = Math.abs(parseFloat(item.cylindrical));
+      const itemCyl = Math.abs(parseFloat(item.cylindrical || 0));
       const targetCyl = Math.abs(cyl);
       return Math.abs(itemSph - targetSph) < 0.01 && Math.abs(itemCyl - targetCyl) < 0.01;
     });

@@ -20,8 +20,8 @@ const PRESET_OPTIONS = {
     { name: "MF ACB PHOTO FILTRO AZUL AR 1.56", index: 1.56, material: "Resina", treatment: "Photo Filtro Azul AR", route: "EXPRESSA_FACETAMENTO" }
   ],
   GRADE_167: [
-    { name: "1.67 AR", index: 1.67, material: "Alto Índice 1.67", treatment: "AR", route: "EXPRESSA_FACETAMENTO" },
-    { name: "1.67 FA", index: 1.67, material: "Alto Índice 1.67", treatment: "Filtro Azul AR", route: "EXPRESSA_FACETAMENTO" }
+    { name: "1.67 AR", index: 1.67, material: "Alto Índice 1.67", treatment: "AR", route: "EXPRESSA_FACETAMENTO", defaultCost: "45.00", defaultSale: "150.00" },
+    { name: "1.67 FA", index: 1.67, material: "Alto Índice 1.67", treatment: "Filtro Azul AR", route: "EXPRESSA_FACETAMENTO", defaultCost: "55.00", defaultSale: "180.00" }
   ],
   BLOCO_VS: [
     { name: "Bloco VS INCOLOR", index: 1.50, material: "CR-39", treatment: "Incolor", route: "SURFACAGEM_CNC" },
@@ -159,6 +159,7 @@ export default function UnifiedLensRegister({ initialData = null, onComplete = n
 
   // Resolução da chave do preset para preço por grau
   const resolvePresetKey = () => {
+    if (matrixType === 'GRADE_167' || parseFloat(refractiveIndex) === 1.67) return null;
     if (selectedPresetObj?.paramKey) return selectedPresetObj.paramKey;
     const b = (brand || '').toUpperCase();
     const t = (treatment || '').toUpperCase();
@@ -219,12 +220,16 @@ export default function UnifiedLensRegister({ initialData = null, onComplete = n
       setMaterial(selectedPresetObj.material || '');
       setRefractiveIndex(String(selectedPresetObj.index || '1.56'));
       setTreatment(selectedPresetObj.treatment || '');
+      if (selectedPresetObj.defaultCost) setCostPrice(selectedPresetObj.defaultCost);
+      if (selectedPresetObj.defaultSale) setSalePrice(selectedPresetObj.defaultSale);
     }
 
-    const calc = getPresetLiveCalculatedPrice();
-    setSalePrice(calc.price.toFixed(2));
-    setSalePriceOverThreshold(calc.overPrice.toFixed(2));
-    setDegreeThreshold(calc.thresh.toFixed(2));
+    if (matrixType === 'LP_GRADE') {
+      const calc = getPresetLiveCalculatedPrice();
+      setSalePrice(calc.price.toFixed(2));
+      setSalePriceOverThreshold(calc.overPrice.toFixed(2));
+      setDegreeThreshold(calc.thresh.toFixed(2));
+    }
   }, [selectedPresetIndex, matrixType, spherical, cylindrical, material, refractiveIndex, treatment, systemParams, degreePolicy]);
 
   // Verificar ou bipar o código de barras SEM incremento automático (Solicita quantidade se já existir)

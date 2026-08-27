@@ -104,11 +104,43 @@ async def allocate_and_deduct_inventory(
                 )
 
         elif matrix_type == MatrixType.BLOCO_VS:
+            all_items_res = await db.execute(
+                select(LensInventoryGrade).where(LensInventoryGrade.lens_model_id == lens_model.id)
+            )
+            all_model_items = all_items_res.scalars().all()
+
             if base_curve > 0:
                 base_val = round(float(base_curve), 2)
+                matched = [
+                    it for it in all_model_items 
+                    if it.base_curve is not None and abs(float(it.base_curve) - base_val) < 0.01
+                ]
+                if not matched and all_model_items:
+                    if len(all_model_items) == 1 and all_model_items[0].base_curve is not None:
+                        base_val = round(float(all_model_items[0].base_curve), 2)
+                    else:
+                        avail = sorted(list(set(f"{float(it.base_curve):.2f}" for it in all_model_items if it.base_curve is not None)))
+                        raise ValueError(
+                            f"Curva base {base_val:.2f} não encontrada no estoque para o bloco '{lens_model.name or lens_model.brand}'. Curvas disponíveis: {', '.join(avail)}."
+                        )
+
                 query = query.where(
                     LensInventoryGrade.base_curve.in_([Decimal(str(base_val)), Decimal(f"{base_val:.2f}"), base_val])
                 )
+            else:
+                if len(all_model_items) == 1 and all_model_items[0].base_curve is not None:
+                    base_val = round(float(all_model_items[0].base_curve), 2)
+                    query = query.where(
+                        LensInventoryGrade.base_curve.in_([Decimal(str(base_val)), Decimal(f"{base_val:.2f}"), base_val])
+                    )
+                elif all_model_items:
+                    with_stock = [it for it in all_model_items if (it.quantity_available - it.reserved_quantity) > 0 and it.base_curve is not None]
+                    chosen = with_stock[0] if with_stock else all_model_items[0]
+                    if chosen.base_curve is not None:
+                        base_val = round(float(chosen.base_curve), 2)
+                        query = query.where(
+                            LensInventoryGrade.base_curve.in_([Decimal(str(base_val)), Decimal(f"{base_val:.2f}"), base_val])
+                        )
 
         res = await db.execute(query)
         item = res.scalars().first()

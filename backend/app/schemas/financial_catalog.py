@@ -35,6 +35,13 @@ class ProductBase(BaseModel):
     treatment: Optional[str] = None
     diameter: Optional[int] = None
     lens_model_id: Optional[uuid.UUID] = None
+    matrix_type: Optional[str] = None
+    quantity: Optional[int] = 1
+    eye_side: Optional[str] = None
+    base_curve: Optional[float] = None
+    addition: Optional[float] = None
+    spherical: Optional[float] = None
+    cylindrical: Optional[float] = None
 
 class ProductCreate(ProductBase):
     change_reason: Optional[str] = "Cadastro inicial do produto"
@@ -54,6 +61,13 @@ class ProductUpdate(BaseModel):
     treatment: Optional[str] = None
     diameter: Optional[int] = None
     lens_model_id: Optional[uuid.UUID] = None
+    matrix_type: Optional[str] = None
+    quantity: Optional[int] = None
+    eye_side: Optional[str] = None
+    base_curve: Optional[float] = None
+    addition: Optional[float] = None
+    spherical: Optional[float] = None
+    cylindrical: Optional[float] = None
 
 class ProductResponse(ProductBase):
     id: uuid.UUID

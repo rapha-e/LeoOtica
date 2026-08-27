@@ -224,5 +224,75 @@ class TestFinancialCatalog(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(history_check), 0)
 
 
+    async def test_lens_creation_with_matrix_type_and_lp_restriction(self):
+        """Valida cadastro de lentes com seleção de matrix_type (ex: GRADE_167) e criação do LensModel."""
+        async with self.async_session() as session:
+            prod_in = ProductCreate(
+                name="Lente 1.67 Visão Simples Pronta",
+                description="Lente acabada de alto índice 1.67",
+                sku="L-167-VS-PRONTA",
+                cost_price=45.00,
+                sale_price=120.00,
+                is_active=True,
+                is_lens=True,
+                brand="Essilor 1.67",
+                material="Resina 1.67",
+                refractive_index=1.67,
+                treatment="Antirreflexo Premium",
+                diameter=70,
+                matrix_type="GRADE_167"
+            )
+            db_product = await crud_catalog.create_product(session, prod_in, user_id=self.user.id)
+            self.assertIsNotNone(db_product.id)
+            self.assertIsNotNone(db_product.lens_model_id)
+
+            # Verifica se o LensModel associado foi criado com matrix_type "GRADE_167"
+            from backend.app.models.lens import LensModel
+            stmt = select(LensModel).where(LensModel.id == db_product.lens_model_id)
+            lens_m = (await session.execute(stmt)).scalar_one_or_none()
+            self.assertIsNotNone(lens_m)
+            self.assertEqual(lens_m.matrix_type, "GRADE_167")
+            self.assertEqual(lens_m.brand, "Essilor 1.67")
+
+    async def test_lens_creation_with_quantity_and_matrix_particularities(self):
+        """Valida salvamento de quantidade, olho/lado, curva base e esférico/cilíndrico com criação na grade física."""
+        async with self.async_session() as session:
+            prod_in = ProductCreate(
+                name="Multifocal Acabado Especial",
+                description="Lente multifocal com indicação de olho",
+                sku="L-MF-ACB-OD",
+                cost_price=50.00,
+                sale_price=150.00,
+                is_active=True,
+                is_lens=True,
+                brand="OptiVision",
+                material="Resina 1.56",
+                refractive_index=1.56,
+                treatment="Multifocal Acabado Especial",
+                diameter=70,
+                matrix_type="MF_ACB",
+                quantity=5,
+                eye_side="OD",
+                base_curve=4.00,
+                addition=2.00,
+                spherical=-1.50,
+                cylindrical=-0.50
+            )
+            db_product = await crud_catalog.create_product(session, prod_in, user_id=self.user.id)
+            self.assertEqual(db_product.quantity, 5)
+            self.assertEqual(db_product.eye_side, "OD")
+            self.assertEqual(float(db_product.addition), 2.00)
+            self.assertEqual(float(db_product.spherical), -1.50)
+
+            # Verifica criação do item no estoque de grade física (LensInventoryGrade)
+            from backend.app.models.lens import LensInventoryGrade
+            stmt = select(LensInventoryGrade).where(LensInventoryGrade.lens_model_id == db_product.lens_model_id)
+            inv_item = (await session.execute(stmt)).scalar_one_or_none()
+            self.assertIsNotNone(inv_item)
+            self.assertEqual(inv_item.quantity_available, 5)
+            self.assertEqual(inv_item.eye, "OD")
+            self.assertEqual(float(inv_item.addition), 2.00)
+            self.assertEqual(float(inv_item.spherical), -1.50)
+
 if __name__ == "__main__":
     unittest.main()

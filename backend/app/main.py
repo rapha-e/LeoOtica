@@ -114,7 +114,14 @@ async def startup_event():
                 "ALTER TABLE service_orders ADD COLUMN lens_model_id CHAR(36);",
                 "ALTER TABLE service_orders ADD COLUMN custom_price_applied BOOLEAN DEFAULT 0;",
                 "ALTER TABLE service_orders ADD COLUMN price_override_reason VARCHAR(255);",
-                "ALTER TABLE service_orders ADD COLUMN special_instructions VARCHAR(500);"
+                "ALTER TABLE service_orders ADD COLUMN special_instructions VARCHAR(500);",
+                "ALTER TABLE products ADD COLUMN matrix_type VARCHAR(50);",
+                "ALTER TABLE products ADD COLUMN quantity INTEGER DEFAULT 1;",
+                "ALTER TABLE products ADD COLUMN eye_side VARCHAR(20);",
+                "ALTER TABLE products ADD COLUMN base_curve NUMERIC(4, 2);",
+                "ALTER TABLE products ADD COLUMN addition NUMERIC(4, 2);",
+                "ALTER TABLE products ADD COLUMN spherical NUMERIC(4, 2);",
+                "ALTER TABLE products ADD COLUMN cylindrical NUMERIC(4, 2);"
             ]:
                 try:
                     await conn.execute(text(col_sql))

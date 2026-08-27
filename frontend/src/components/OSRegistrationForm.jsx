@@ -71,6 +71,7 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
   // Produto e Quantidade selecionada
   const [selectedLensModelId, setSelectedLensModelId] = useState('');
   const [selectedLensModel, setSelectedLensModel] = useState(null);
+  const [availableBaseCurves, setAvailableBaseCurves] = useState([]);
   const [lensQuantity, setLensQuantity] = useState('2'); // Quantidade de Lentes
   const [selectedEyeTarget, setSelectedEyeTarget] = useState('OD_OE'); // 'OD', 'OE', 'OD_OE'
   const [manualPrice, setManualPrice] = useState('');
@@ -404,8 +405,7 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
       }
 
       if (modelsList.length > 0) {
-        setSelectedLensModelId(modelsList[0].id);
-        setSelectedLensModel(modelsList[0]);
+        handleLensModelChange(modelsList[0].id, modelsList);
       }
 
       if (servicesList.length > 0) {
@@ -426,9 +426,10 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
   };
 
   // Pré-carregamento automático de lente cadastrada no Cadastrador Unificado
-  const handleLensModelChange = (modelId) => {
+  const handleLensModelChange = async (modelId, modelsArray = null) => {
     setSelectedLensModelId(modelId);
-    const model = lensModels.find(m => m.id === modelId);
+    const sourceList = modelsArray || lensModels;
+    const model = sourceList.find(m => m.id === modelId);
     setSelectedLensModel(model || null);
     
     // Se não for multifocal ou multifocal semi acabado, fixa em ambos (OD_OE) e 2 unidades
@@ -445,6 +446,32 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
     if (!isMF) {
       setSelectedEyeTarget('OD_OE');
       setLensQuantity('2');
+    }
+
+    if (modelId) {
+      try {
+        const invRes = await api.get(`/inventory/grid?lens_model_id=${modelId}`);
+        const items = Array.isArray(invRes.data) ? invRes.data : [];
+        const bases = Array.from(
+          new Set(
+            items
+              .filter(it => it.base_curve !== null && it.base_curve !== undefined && !isNaN(parseFloat(it.base_curve)))
+              .map(it => parseFloat(it.base_curve))
+          )
+        ).sort((a, b) => a - b);
+
+        setAvailableBaseCurves(bases);
+
+        if (bases.length > 0) {
+          const firstBaseStr = bases[0].toFixed(2);
+          setOd(prev => ({ ...prev, baseCurve: firstBaseStr }));
+          setOe(prev => ({ ...prev, baseCurve: firstBaseStr }));
+        }
+      } catch (err) {
+        console.error("Erro ao carregar grade do modelo:", err);
+      }
+    } else {
+      setAvailableBaseCurves([]);
     }
   };
 
@@ -995,6 +1022,32 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
                   <span style={{ fontSize: '1.05rem' }}>Especificação do Bloco de Visão Simples (Surfaçagem CNC)</span>
                 </div>
 
+                {/* BOTÕES DE SELEÇÃO RÁPIDA DE CURVAS BASES DISPONÍVEIS */}
+                {availableBaseCurves.length > 0 && (
+                  <div style={{ marginBottom: '16px', background: 'rgba(255, 255, 255, 0.04)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                    <span style={{ fontSize: '0.82rem', color: '#38bdf8', fontWeight: 800, display: 'block', marginBottom: '8px' }}>
+                      ⚡ Curvas Bases Cadastradas no Estoque para este Modelo:
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {availableBaseCurves.map(baseVal => {
+                        const baseStr = baseVal.toFixed(2);
+                        const isSelected = parseFloat(od.baseCurve) === baseVal || od.baseCurve === baseStr;
+                        return (
+                          <button
+                            key={baseVal}
+                            type="button"
+                            className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => handleUnifiedPrescriptionChange('baseCurve', baseStr)}
+                            style={{ fontWeight: 800, borderRadius: '8px', fontSize: '0.88rem' }}
+                          >
+                            🎯 Base {baseStr} {isSelected ? '✓' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px', alignItems: 'end' }}>
                   {/* CAMPO DESTAQUE DA CURVA BASE (CONFORME SOLICITADO NO ANEXO) */}
                   <div className="form-group" style={{ background: 'rgba(255, 255, 255, 0.95)', padding: '16px', borderRadius: '12px', border: '2px solid #0284c7', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.2)' }}>
@@ -1003,7 +1056,7 @@ export default function OSRegistrationForm({ onOSCreated, onCancel }) {
                     </label>
                     <input
                       type="number" step="0.25" className="form-control"
-                      placeholder="Ex: 4.00"
+                      placeholder="Ex: 2.00"
                       value={od.baseCurve || ''} onChange={(e) => handleUnifiedPrescriptionChange('baseCurve', e.target.value)}
                       style={{ color: 'black', fontWeight: 900, fontSize: '1.25rem', padding: '12px 16px', borderRadius: '8px', border: '2px solid #0284c7', background: '#f0f9ff' }}
                       required

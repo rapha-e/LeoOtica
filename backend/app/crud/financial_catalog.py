@@ -46,29 +46,45 @@ async def get_products(
     sql_query = sql_query.order_by(Product.name.asc()).offset(skip).limit(limit)
     products = list((await db.execute(sql_query)).scalars().all())
     
-    # Sincroniza dinamicamente o SKU dos produtos com o campo 'barcode' das lentes de estoque
+    # Sincroniza dinamicamente o SKU dos produtos com o campo 'barcode' das lentes de estoque e atributos de grade
     from backend.app.models.lens import LensInventoryGrade, LensModel
     needs_commit = False
     for p in products:
         if p.lens_model_id:
-            g_stmt = select(LensInventoryGrade.barcode).where(
-                LensInventoryGrade.lens_model_id == p.lens_model_id,
-                LensInventoryGrade.barcode.isnot(None),
-                LensInventoryGrade.barcode != ""
+            m_stmt = select(LensModel).where(LensModel.id == p.lens_model_id)
+            lens_m = (await db.execute(m_stmt)).scalars().first()
+            
+            g_stmt = select(LensInventoryGrade).where(
+                LensInventoryGrade.lens_model_id == p.lens_model_id
             )
-            bcode = (await db.execute(g_stmt)).scalars().first()
-            if not bcode:
-                m_stmt = select(LensModel.code).where(
-                    LensModel.id == p.lens_model_id,
-                    LensModel.code.isnot(None),
-                    LensModel.code != ""
-                )
-                bcode = (await db.execute(m_stmt)).scalars().first()
-                
-            if bcode and p.sku != bcode:
-                p.sku = bcode
-                db.add(p)
-                needs_commit = True
+            g_items = list((await db.execute(g_stmt)).scalars().all())
+
+            if lens_m:
+                if not p.matrix_type and lens_m.matrix_type:
+                    p.matrix_type = lens_m.matrix_type
+                    needs_commit = True
+
+            if g_items:
+                first_g = g_items[0]
+                if first_g.barcode and p.sku != first_g.barcode:
+                    clean_sku = first_g.barcode.removesuffix("-OD").removesuffix("-OE")
+                    if p.sku != clean_sku and p.sku != first_g.barcode:
+                        p.sku = clean_sku
+                        db.add(p)
+                        needs_commit = True
+
+                if p.base_curve is None and first_g.base_curve is not None:
+                    p.base_curve = float(first_g.base_curve)
+                    needs_commit = True
+                if p.addition is None and first_g.addition is not None:
+                    p.addition = float(first_g.addition)
+                    needs_commit = True
+                if p.spherical is None and first_g.spherical is not None:
+                    p.spherical = float(first_g.spherical)
+                    needs_commit = True
+                if p.cylindrical is None and first_g.cylindrical is not None:
+                    p.cylindrical = float(first_g.cylindrical)
+                    needs_commit = True
 
     if needs_commit:
         await db.commit()
@@ -80,6 +96,7 @@ async def create_product(
     product_in: ProductCreate,
     user_id: Optional[uuid.UUID] = None
 ) -> Product:
+    target_matrix = product_in.matrix_type or "MF_ACB"
     db_product = Product(
         name=product_in.name,
         description=product_in.description,
@@ -95,23 +112,64 @@ async def create_product(
         refractive_index=product_in.refractive_index,
         treatment=product_in.treatment,
         diameter=product_in.diameter,
+        matrix_type=target_matrix if product_in.is_lens else None,
+        quantity=product_in.quantity if product_in.quantity is not None else 1,
+        eye_side=product_in.eye_side,
+        base_curve=product_in.base_curve,
+        addition=product_in.addition,
+        spherical=product_in.spherical,
+        cylindrical=product_in.cylindrical,
     )
     
     # Se for uma lente, cria ou vincula o LensModel
     if db_product.is_lens:
-        from backend.app.models.lens import LensModel
+        from backend.app.models.lens import LensModel, LensInventoryGrade
         from decimal import Decimal
+        target_matrix = product_in.matrix_type or "MF_ACB"
         lens_model = LensModel(
+            code=db_product.sku,
+            name=db_product.name,
             brand=db_product.brand or "Lente",
             material=db_product.material or "Resina",
             refractive_index=Decimal(str(db_product.refractive_index or "1.56")),
             treatment=db_product.treatment or "Incolor",
             diameter=db_product.diameter or 70,
-            cost_price=Decimal(str(db_product.cost_price or "25.00"))
+            cost_price=Decimal(str(db_product.cost_price or "25.00")),
+            sale_price=Decimal(str(db_product.sale_price or "75.00")),
+            matrix_type=target_matrix
         )
         db.add(lens_model)
         await db.flush()
         db_product.lens_model_id = lens_model.id
+
+        # Cria a dioptria / item de estoque físico na grade
+        if target_matrix in ["MF_ACB", "MF_BLOCO"]:
+            target_eyes = ["OD", "OE"] if (not product_in.eye_side or product_in.eye_side == "AMBOS") else [product_in.eye_side]
+            for side in target_eyes:
+                side_barcode = f"{db_product.sku}-{side}" if not db_product.sku.endswith(f"-{side}") else db_product.sku
+                inv_item = LensInventoryGrade(
+                    lens_model_id=lens_model.id,
+                    spherical=Decimal(str(product_in.spherical)) if product_in.spherical is not None else Decimal("0.00"),
+                    cylindrical=Decimal(str(product_in.cylindrical)) if product_in.cylindrical is not None else Decimal("0.00"),
+                    base_curve=Decimal(str(product_in.base_curve)) if product_in.base_curve is not None else None,
+                    addition=Decimal(str(product_in.addition)) if product_in.addition is not None else None,
+                    eye=side,
+                    barcode=side_barcode,
+                    quantity_available=product_in.quantity or 1
+                )
+                db.add(inv_item)
+        else:
+            inv_item = LensInventoryGrade(
+                lens_model_id=lens_model.id,
+                spherical=Decimal(str(product_in.spherical)) if product_in.spherical is not None else Decimal("0.00"),
+                cylindrical=Decimal(str(product_in.cylindrical)) if product_in.cylindrical is not None else Decimal("0.00"),
+                base_curve=Decimal(str(product_in.base_curve)) if (target_matrix == "BLOCO_VS" and product_in.base_curve is not None) else None,
+                addition=None,
+                eye=None,
+                barcode=db_product.sku,
+                quantity_available=product_in.quantity or 1
+            )
+            db.add(inv_item)
 
     db.add(db_product)
     await db.commit()
@@ -207,7 +265,80 @@ async def update_product(
                 lens_model.diameter = db_product.diameter or 70
                 lens_model.cost_price = Decimal(str(db_product.cost_price or "25.00"))
                 lens_model.sale_price = Decimal(str(db_product.sale_price or "75.00"))
+                if product_in.matrix_type:
+                    lens_model.matrix_type = product_in.matrix_type
                 db.add(lens_model)
+
+                # Sincroniza também a grade de estoque físico (LensInventoryGrade)
+                from backend.app.models.lens import LensInventoryGrade
+                target_m = lens_model.matrix_type or "MF_ACB"
+                inv_base = Decimal(str(db_product.base_curve)) if (target_m in ["BLOCO_VS", "MF_ACB", "MF_BLOCO"] and db_product.base_curve is not None) else None
+                inv_add = Decimal(str(db_product.addition)) if (target_m in ["MF_ACB", "MF_BLOCO"] and db_product.addition is not None) else None
+                inv_sph = Decimal(str(db_product.spherical)) if db_product.spherical is not None else Decimal("0.00")
+                inv_cyl = Decimal(str(db_product.cylindrical)) if db_product.cylindrical is not None else Decimal("0.00")
+
+                inv_stmt = select(LensInventoryGrade).where(LensInventoryGrade.lens_model_id == lens_model.id)
+                inv_items = (await db.execute(inv_stmt)).scalars().all()
+
+                if target_m in ["MF_ACB", "MF_BLOCO"]:
+                    target_eyes = ["OD", "OE"] if (not db_product.eye_side or db_product.eye_side == "AMBOS") else [db_product.eye_side]
+                    by_eye = {item.eye: item for item in inv_items if item.eye in ["OD", "OE"]}
+
+                    # Remove itens de olhos não selecionados se o lado foi alterado
+                    for item in inv_items:
+                        if item.eye not in target_eyes:
+                            await db.delete(item)
+
+                    for side in target_eyes:
+                        clean_sku = db_product.sku.removesuffix("-OD").removesuffix("-OE")
+                        side_barcode = f"{clean_sku}-{side}"
+                        if side in by_eye:
+                            inv = by_eye[side]
+                            inv.barcode = side_barcode
+                            if db_product.quantity is not None:
+                                inv.quantity_available = db_product.quantity
+                            inv.spherical = inv_sph
+                            inv.cylindrical = inv_cyl
+                            inv.base_curve = inv_base
+                            inv.addition = inv_add
+                            inv.eye = side
+                            db.add(inv)
+                        else:
+                            new_inv = LensInventoryGrade(
+                                lens_model_id=lens_model.id,
+                                spherical=inv_sph,
+                                cylindrical=inv_cyl,
+                                base_curve=inv_base,
+                                addition=inv_add,
+                                eye=side,
+                                barcode=side_barcode,
+                                quantity_available=db_product.quantity or 1
+                            )
+                            db.add(new_inv)
+                else:
+                    if inv_items:
+                        for inv in inv_items:
+                            inv.barcode = db_product.sku
+                            if db_product.quantity is not None:
+                                inv.quantity_available = db_product.quantity
+                            inv.spherical = inv_sph
+                            inv.cylindrical = inv_cyl
+                            inv.base_curve = inv_base
+                            inv.addition = None
+                            inv.eye = None
+                            db.add(inv)
+                    else:
+                        new_inv = LensInventoryGrade(
+                            lens_model_id=lens_model.id,
+                            spherical=inv_sph,
+                            cylindrical=inv_cyl,
+                            base_curve=inv_base,
+                            addition=None,
+                            eye=None,
+                            barcode=db_product.sku,
+                            quantity_available=db_product.quantity or 1
+                        )
+                        db.add(new_inv)
 
                 # Re-sincroniza a descrição do parâmetro do sistema se houver chave correspondente
                 pk = get_preset_key_for_lens(

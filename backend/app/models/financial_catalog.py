@@ -27,6 +27,15 @@ class Product(Base):
     diameter: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     lens_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("lens_models.id", ondelete="SET NULL"), nullable=True)
     
+    # Especificações de grade e estoque
+    quantity: Mapped[Optional[int]] = mapped_column(Integer, default=1, nullable=True)
+    matrix_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    eye_side: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    base_curve: Mapped[Optional[float]] = mapped_column(Numeric(4, 2), nullable=True)
+    addition: Mapped[Optional[float]] = mapped_column(Numeric(4, 2), nullable=True)
+    spherical: Mapped[Optional[float]] = mapped_column(Numeric(4, 2), nullable=True)
+    cylindrical: Mapped[Optional[float]] = mapped_column(Numeric(4, 2), nullable=True)
+
     # Relacionamento com o estoque físico
     lens_model: Mapped[Optional["LensModel"]] = relationship("LensModel")
 

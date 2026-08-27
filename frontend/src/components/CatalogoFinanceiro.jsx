@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   DollarSign, Plus, Search, Edit2, Trash2, Clock, Check,
-  X, AlertCircle, RefreshCw, Filter, ShieldAlert, History, Layers, FileText, Box
+  X, AlertCircle, RefreshCw, Filter, ShieldAlert, History, Layers, FileText, Box, Barcode, Scan
 } from 'lucide-react';
 import { ProductService, TreatmentService, TechnicalServiceService, BlockService } from '../services/api';
 
@@ -23,7 +23,11 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
   const [historyData, setHistoryData] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Formulário estendido com suporte a Blocos
+  const [isTreatmentEdited, setIsTreatmentEdited] = useState(false);
+  const skuInputRef = useRef(null);
+  const [skuScannedAlert, setSkuScannedAlert] = useState(false);
+
+  // Formulário estendido com suporte a Blocos e Grades de Lente
   const [formData, setFormData] = useState({
     id: null,
     name: '',
@@ -41,7 +45,14 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
     treatment: '',
     diameter: '',
     base_curves_config: '2.00, 4.00, 6.00',
-    additions_config: '0.00, 0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25'
+    additions_config: '0.00, 0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25',
+    matrix_type: 'MF_ACB',
+    quantity: '1',
+    eye_side: 'AMBOS',
+    base_curve: '4.00',
+    addition: '1.00',
+    spherical: '0.00',
+    cylindrical: '0.00'
   });
 
   const [originalPrices, setOriginalPrices] = useState({
@@ -118,6 +129,14 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
     loadItems();
   };
 
+  const handleNameInputChange = (newName) => {
+    setFormData(prev => ({
+      ...prev,
+      name: newName,
+      treatment: isTreatmentEdited ? prev.treatment : newName
+    }));
+  };
+
   // Abre formulário para criação
   const handleOpenCreate = (targetTab = null) => {
     const subTab = targetTab || activeSubTab;
@@ -141,11 +160,22 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
       treatment: '',
       diameter: '70',
       base_curves_config: '2.00, 4.00, 6.00',
-      additions_config: '0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00'
+      additions_config: '0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00',
+      matrix_type: 'MF_ACB',
+      quantity: '1',
+      eye_side: 'AMBOS',
+      base_curve: '4.00',
+      addition: '1.00',
+      spherical: '0.00',
+      cylindrical: '0.00'
     });
+    setIsTreatmentEdited(false);
     setOriginalPrices({ sale_price: null, cost_price: null, price: null });
     setFormError('');
     setIsFormModalOpen(true);
+    if (subTab === 'products') {
+      setTimeout(() => skuInputRef.current?.focus(), 150);
+    }
   };
 
   // Abre formulário para edição
@@ -167,11 +197,20 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
       brand: item.brand || '',
       material: item.material || 'CR-39',
       refractive_index: item.refractive_index ? String(item.refractive_index) : '1.56',
-      treatment: isProd ? (item.treatment || '') : '',
+      treatment: isProd ? (item.treatment || item.name || '') : '',
       diameter: isProd && item.diameter ? String(item.diameter) : '',
       base_curves_config: item.base_curves_config || '2.00, 4.00, 6.00',
-      additions_config: item.additions_config || '0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00'
+      additions_config: item.additions_config || '0.00, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00',
+      matrix_type: item.matrix_type || item.lens_model?.matrix_type || 'MF_ACB',
+      quantity: item.quantity ? String(item.quantity) : '1',
+      eye_side: item.eye_side || 'AMBOS',
+      base_curve: item.base_curve ? String(item.base_curve) : '4.00',
+      addition: item.addition ? String(item.addition) : '1.00',
+      spherical: item.spherical ? String(item.spherical) : '0.00',
+      cylindrical: item.cylindrical ? String(item.cylindrical) : '0.00'
     });
+
+    setIsTreatmentEdited(Boolean(item.treatment && item.treatment !== item.name));
 
     setOriginalPrices({
       sale_price: (isProd || isBlock) ? item.sale_price : null,
@@ -216,20 +255,39 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
 
     try {
       if (activeSubTab === 'products') {
+        const parseNum = (val) => {
+          if (val === null || val === undefined || val === '') return null;
+          const num = parseFloat(String(val).replace(',', '.'));
+          return isNaN(num) ? null : num;
+        };
+
+        const finalSku = (formData.sku || '').trim() || `LENT-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+        const matrix = formData.matrix_type || 'MF_ACB';
+        const isMF = matrix === 'MF_ACB' || matrix === 'MF_BLOCO';
+        const isBlocoVS = matrix === 'BLOCO_VS';
+        const is167 = matrix === 'GRADE_167';
+
         const payload = {
           name: formData.name,
           description: formData.description || null,
-          sku: formData.sku,
-          cost_price: parseFloat(formData.cost_price) || 0,
-          sale_price: parseFloat(formData.sale_price) || 0,
+          sku: finalSku,
+          cost_price: parseNum(formData.cost_price) || 0,
+          sale_price: parseNum(formData.sale_price) || 0,
           is_active: formData.is_active,
           change_reason: formData.change_reason || null,
           is_lens: formData.is_lens,
-          brand: formData.is_lens ? formData.brand : null,
-          material: formData.is_lens ? formData.material : null,
-          refractive_index: formData.is_lens ? parseFloat(formData.refractive_index) || null : null,
-          treatment: formData.is_lens ? formData.treatment : null,
-          diameter: formData.is_lens ? parseInt(formData.diameter) || null : null
+          brand: formData.is_lens ? (formData.brand || 'Lente') : null,
+          material: formData.is_lens ? (formData.material || 'CR-39') : null,
+          refractive_index: formData.is_lens ? parseNum(formData.refractive_index) || 1.56 : null,
+          treatment: formData.treatment || formData.name || null,
+          diameter: formData.is_lens ? parseInt(formData.diameter) || 70 : null,
+          matrix_type: matrix,
+          quantity: parseInt(formData.quantity) || 1,
+          eye_side: isMF ? (formData.eye_side || 'AMBOS') : null,
+          base_curve: (isMF || isBlocoVS) ? parseNum(formData.base_curve) : null,
+          addition: isMF ? parseNum(formData.addition) : null,
+          spherical: is167 ? (parseNum(formData.spherical) ?? 0) : parseNum(formData.spherical),
+          cylindrical: is167 ? (parseNum(formData.cylindrical) ?? 0) : parseNum(formData.cylindrical)
         };
 
         if (formData.id) {
@@ -303,7 +361,14 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
       setIsFormModalOpen(false);
     } catch (err) {
       console.error(err);
-      setFormError(err.response?.data?.detail || 'Erro ao salvar o item.');
+      const detailMsg = err.response?.data?.detail;
+      if (Array.isArray(detailMsg)) {
+        setFormError(detailMsg.map(d => `${d.loc ? d.loc.join(' > ') + ': ' : ''}${d.msg}`).join(' | '));
+      } else if (typeof detailMsg === 'string') {
+        setFormError(detailMsg);
+      } else {
+        setFormError('Erro ao salvar o item.');
+      }
     }
   };
 
@@ -403,6 +468,13 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             className="btn btn-primary btn-sm"
+            onClick={() => handleOpenCreate('products')}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+          >
+            <Plus size={16} /> Cadastrar Lente
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
             onClick={() => handleOpenCreate('services')}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
           >
@@ -567,6 +639,31 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
                         Marca: {item.brand}
                       </span>
                     )}
+                    {activeSubTab === 'products' && item.matrix_type && (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          background: item.matrix_type === 'BLOCO_VS' ? 'rgba(59, 130, 246, 0.12)' : item.matrix_type === 'GRADE_167' ? 'rgba(168, 85, 247, 0.12)' : 'rgba(6, 182, 212, 0.12)',
+                          color: item.matrix_type === 'BLOCO_VS' ? '#2563eb' : item.matrix_type === 'GRADE_167' ? '#9333ea' : '#0891b2',
+                          border: '1px solid rgba(0,0,0,0.06)'
+                        }}>
+                          {item.matrix_type === 'BLOCO_VS' ? 'Bloco Visão Simples' : item.matrix_type === 'GRADE_167' ? '1.67 Lentes Prontas' : item.matrix_type === 'MF_ACB' ? 'Multifocal Acabado' : item.matrix_type}
+                        </span>
+                        {item.base_curve !== null && item.base_curve !== undefined && (
+                          <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-muted))', fontWeight: 600 }}>
+                            Base: {Number(item.base_curve).toFixed(2)}
+                          </span>
+                        )}
+                        {item.addition !== null && item.addition !== undefined && (
+                          <span style={{ fontSize: '0.7rem', color: 'hsl(var(--text-muted))', fontWeight: 600 }}>
+                            Ad: +{Number(item.addition).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
 
                   <td style={{ padding: '16px 20px', color: 'hsl(var(--text-secondary))', fontSize: '0.85rem' }}>
@@ -688,7 +785,7 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
                     required
                     placeholder={activeSubTab === 'blocks' ? 'Ex: Bloco Freeform 1.56' : 'Ex: Antirreflexo Premium...'}
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => handleNameInputChange(e.target.value)}
                     style={{ color: 'black' }}
                   />
                 </div>
@@ -710,62 +807,120 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
 
                 {activeSubTab === 'products' && (
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Código de Barras (SKU) *</span>
-                      {(formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) && (
-                        <span style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 700 }}>🔒 Fixo</span>
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Barcode size={18} style={{ color: '#2563eb' }} />
+                        Código de Barras (SKU) / Leitor Óptico *
+                      </span>
+                      {skuScannedAlert ? (
+                        <span style={{ fontSize: '0.75rem', color: '#16a34a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Check size={14} /> Código lido via bipador!
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.72rem', color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          📡 Suporta Bipador USB
+                        </span>
                       )}
                     </label>
-                    <input
-                      type="text"
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        ref={skuInputRef}
+                        type="text"
+                        className="form-control"
+                        placeholder="Bipe o código com o leitor ou digite (deixe em branco para auto-gerar)"
+                        value={formData.sku}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault(); // Evita envio prematuro do formulário ao bipar
+                            if (formData.sku?.trim()) {
+                              setSkuScannedAlert(true);
+                              setTimeout(() => setSkuScannedAlert(false), 2500);
+                            }
+                          }
+                        }}
+                        onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                        style={{
+                          color: 'black',
+                          backgroundColor: 'white',
+                          cursor: 'text',
+                          paddingRight: '40px',
+                          fontWeight: 600
+                        }}
+                      />
+                      <button
+                        type="button"
+                        title="Clique para focar e bipar com o leitor de código de barras"
+                        onClick={() => skuInputRef.current?.focus()}
+                        style={{
+                          position: 'absolute',
+                          right: '8px',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#2563eb',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Scan size={20} />
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '4px' }}>
+                      💡 Ao utilizar um leitor de código de barras USB/Bluetooth, o código será inserido automaticamente sem submeter o formulário antes da hora.
+                    </div>
+                  </div>
+                )}
+                {activeSubTab === 'products' && (
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 700 }}>
+                      Grade de Destino (Matriz) *
+                    </label>
+                    <select
                       className="form-control"
-                      required
-                      placeholder="Ex: LENT-CR39-AR"
-                      value={formData.sku}
-                      onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                      disabled={formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens}
-                      style={{
-                        color: 'black',
-                        backgroundColor: (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) ? '#f3f4f6' : 'white',
-                        cursor: (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) ? 'not-allowed' : 'text'
-                      }}
-                    />
+                      value={formData.matrix_type || 'MF_ACB'}
+                      onChange={(e) => setFormData({ ...formData, matrix_type: e.target.value })}
+                      style={{ color: 'black', fontWeight: 600 }}
+                    >
+                      <option value="MF_ACB">Multifocal Acabado (MF_ACB)</option>
+                      <option value="GRADE_167">1.67 Lentes Prontas (GRADE_167)</option>
+                      <option value="BLOCO_VS">Bloco Visão Simples (BLOCO_VS)</option>
+                      <option value="MF_BLOCO">Multifocal Bloco (MF_BLOCO)</option>
+                    </select>
+                    <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '4px' }}>
+                      ℹ️ Lentes cadastradas no Catálogo Financeiro não participam da política de preços por grau e <strong>não podem</strong> ser cadastradas na grade <em>Visão Simples LP</em>.
+                    </div>
                   </div>
                 )}
               </div>
 
               {(activeSubTab === 'products' || activeSubTab === 'treatments') && (
                 <div className="form-group">
-                  <label className="form-label">Selecione o Tratamento Padrão *</label>
-                  <select
+                  <label className="form-label" style={{ fontWeight: 700 }}>
+                    Selecione / Digite o Tratamento Padrão *
+                  </label>
+                  <input
+                    type="text"
                     className="form-control"
+                    required
+                    placeholder="Digite ou selecione o tratamento padrão..."
+                    list="treatments-preset-list"
                     value={formData.treatment}
                     onChange={(e) => {
-                      const sel = LP_TREATMENTS_OPTIONS.find(t => t.id === e.target.value);
-                      if (sel) {
-                        setFormData({
-                          ...formData,
-                          treatment: sel.id,
-                          name: formData.name || sel.label,
-                          material: sel.material,
-                          refractive_index: sel.refractive_index,
-                          cost_price: sel.defaultCost,
-                          sale_price: sel.defaultSale,
-                          price: sel.defaultSale
-                        });
-                      } else {
-                        setFormData({ ...formData, treatment: e.target.value });
-                      }
+                      setIsTreatmentEdited(true);
+                      setFormData({ ...formData, treatment: e.target.value });
                     }}
                     style={{ color: 'black', fontWeight: 600 }}
-                  >
-                    <option value="">-- Selecione o Tratamento na lista do sistema --</option>
+                  />
+                  <datalist id="treatments-preset-list">
                     {LP_TREATMENTS_OPTIONS.map((lp) => (
-                      <option key={lp.id} value={lp.id}>
-                        {lp.label}
-                      </option>
+                      <option key={lp.id} value={lp.label} />
                     ))}
-                  </select>
+                  </datalist>
+                  <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '4px' }}>
+                    ℹ️ Preenchido automaticamente com a informação do campo <strong>Nome</strong> (editável pelo operador).
+                  </div>
                 </div>
               )}
 
@@ -802,10 +957,10 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
               )}
 
               {(activeSubTab === 'products' || activeSubTab === 'blocks') ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Preço de Custo (R$) *</span>
+                    <label className="form-label" style={{ fontWeight: 700 }}>
+                      Preço de Custo (R$) *
                     </label>
                     <input
                       type="number"
@@ -824,11 +979,8 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Preço de Venda (R$) *</span>
-                      {activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) && (
-                        <span style={{ fontSize: '0.72rem', color: '#3b82f6', fontWeight: 700 }}>🔒 Regido por Parâmetros</span>
-                      )}
+                    <label className="form-label" style={{ fontWeight: 700 }}>
+                      Preço de Venda (R$) *
                     </label>
                     <input
                       type="number"
@@ -838,18 +990,29 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
                       placeholder="0.00"
                       value={formData.sale_price}
                       onChange={(e) => setFormData({ ...formData, sale_price: e.target.value })}
-                      disabled={activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)}
                       style={{
                         color: 'black',
-                        backgroundColor: (activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)) ? '#f3f4f6' : 'white',
-                        cursor: (activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)) ? 'not-allowed' : 'text'
+                        backgroundColor: 'white',
+                        cursor: 'text'
                       }}
-                      title={(activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens)) ? "Preço regido exclusivamente pelos Parâmetros Globais do Sistema." : ""}
                     />
                   </div>
-                  {activeSubTab === 'products' && (formData.name?.toUpperCase().includes('LP ') || formData.brand?.toUpperCase().includes('LP ') || formData.is_lens) && (
-                    <div style={{ gridColumn: '1 / -1', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '12px 16px', borderRadius: '10px', color: '#1e40af', fontSize: '0.85rem', fontWeight: 600, marginTop: '-4px' }}>
-                      ℹ️ <strong>Informação do Sistema:</strong> Para as lentes da grade Visão Simples LP, o <strong>Preço de Custo</strong> e o <strong>Nome / Descrição da Lente</strong> podem ser editados nesta tela. O <strong>Preço de Venda</strong> continua sendo regido exclusivamente pela opção <strong>Parâmetros do Sistema</strong>.
+
+                  {activeSubTab === 'products' && (
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 700 }}>
+                        Quantidade (Estoque) *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        className="form-control"
+                        required
+                        placeholder="1"
+                        value={formData.quantity}
+                        onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                        style={{ color: 'black', fontWeight: 600 }}
+                      />
                     </div>
                   )}
                 </div>
@@ -866,6 +1029,135 @@ const CatalogoFinanceiro = ({ onOpenManualLensInsert }) => {
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     style={{ color: 'black' }}
                   />
+                </div>
+              )}
+
+              {/* Especificações e Particularidades por Grade de Destino */}
+              {activeSubTab === 'products' && (
+                <div style={{
+                  background: 'rgba(59, 130, 246, 0.05)',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  padding: '16px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    🎯 Particularidades da Grade de Destino (
+                    {formData.matrix_type === 'BLOCO_VS'
+                      ? 'Bloco Visão Simples'
+                      : formData.matrix_type === 'GRADE_167'
+                      ? '1.67 Lentes Prontas'
+                      : 'Multifocal'}
+                    )
+                  </span>
+
+                  {/* Multifocal Acabado e Multifocal Bloco: Informar Olho, Curva Base e Adição */}
+                  {(formData.matrix_type === 'MF_ACB' || formData.matrix_type === 'MF_BLOCO' || !formData.matrix_type) && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontWeight: 700, color: '#1e293b' }}>
+                          Lado / Olho *
+                        </label>
+                        <select
+                          className="form-control"
+                          value={formData.eye_side || 'AMBOS'}
+                          onChange={(e) => setFormData({ ...formData, eye_side: e.target.value })}
+                          style={{ color: 'black', fontWeight: 600 }}
+                        >
+                          <option value="AMBOS">Ambos (OD / OE)</option>
+                          <option value="OD">Olho Direito (OD)</option>
+                          <option value="OE">Olho Esquerdo (OE)</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontWeight: 700, color: '#1e293b' }}>
+                          Curva Base *
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          required
+                          placeholder="Ex: 2.00, 4.00, 6.00"
+                          value={formData.base_curve}
+                          onChange={(e) => setFormData({ ...formData, base_curve: e.target.value })}
+                          style={{ color: 'black', fontWeight: 600 }}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontWeight: 700, color: '#1e293b' }}>
+                          Adição (Ad) *
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          required
+                          placeholder="Ex: 1.00 ou 1,00"
+                          value={formData.addition}
+                          onChange={(e) => setFormData({ ...formData, addition: e.target.value })}
+                          style={{ color: 'black', fontWeight: 600 }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bloco Visão Simples: Informar a Base */}
+                  {formData.matrix_type === 'BLOCO_VS' && (
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 700, color: '#1e293b' }}>
+                        Curva Base do Bloco *
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        required
+                        placeholder="Ex: 2.00 ou Base 4.00"
+                        value={formData.base_curve}
+                        onChange={(e) => setFormData({ ...formData, base_curve: e.target.value })}
+                        style={{ color: 'black', fontWeight: 600 }}
+                      />
+                      <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '4px' }}>
+                        Informe a base da curva do bloco visão simples.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 1.67 Lentes Prontas: Informar Esférico e Cilíndrico */}
+                  {formData.matrix_type === 'GRADE_167' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontWeight: 700, color: '#1e293b' }}>
+                          Grau Esférico (Esf) *
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          required
+                          placeholder="Ex: -2.00 ou -2,00"
+                          value={formData.spherical}
+                          onChange={(e) => setFormData({ ...formData, spherical: e.target.value })}
+                          style={{ color: 'black', fontWeight: 600 }}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontWeight: 700, color: '#1e293b' }}>
+                          Grau Cilíndrico (Cil) *
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          required
+                          placeholder="Ex: -0.75 ou -0,75"
+                          value={formData.cylindrical}
+                          onChange={(e) => setFormData({ ...formData, cylindrical: e.target.value })}
+                          style={{ color: 'black', fontWeight: 600 }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

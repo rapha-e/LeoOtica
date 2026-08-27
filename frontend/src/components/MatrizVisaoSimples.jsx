@@ -7,57 +7,144 @@ import api, { InventoryService } from "../services/api";
 
 // ============================================================
 // CONFIGURACAO DA GRADE BLOCO VISAO SIMPLES
-// Linhas: Curva Base 0 / 2 / 4 / 6
-// Colunas: 7 tratamentos (igual GradeOptica / GradeBlocos)
+// Suporta colunas dinamicas para novos tratamentos cadastrados
 // ============================================================
 
-const BASES = [
+const STANDARD_BASES = [
   { key: "0", label: "Base 0.00", fullLabel: "Curva Base 0.00", color: "#06b6d4" },
   { key: "2", label: "Base 2.00", fullLabel: "Curva Base 2.00", color: "#3b82f6" },
   { key: "4", label: "Base 4.00", fullLabel: "Curva Base 4.00", color: "#a855f7" },
   { key: "6", label: "Base 6.00", fullLabel: "Curva Base 6.00", color: "#22c55e" },
 ];
 
-const LENS_COLUMNS = [
-  { key: "incolor",              label: "INCOLOR",              treatments: ["incolor", "Incolor", "INCOLOR"],                                    index167: false },
-  { key: "ar",                   label: "AR",                   treatments: ["ar", "AR", "Anti Reflexo"],                                         index167: false },
-  { key: "filtro_azul_ar",       label: "FILTRO AZUL AR",       treatments: ["filtro azul ar", "Filtro Azul AR", "FILTRO AZUL AR"],                index167: false },
-  { key: "photo_ar",             label: "PHOTO AR",             treatments: ["photo ar", "Photo AR", "PHOTO AR"],                                 index167: false },
-  { key: "photo_filtro_azul_ar", label: "PHOTO FILTRO AZUL AR", treatments: ["photo filtro azul ar", "Photo Filtro Azul AR", "PHOTO FILTRO AZUL AR"], index167: false },
-  { key: "lens_167_ar",          label: "1.67 AR",              treatments: ["ar", "AR"],                                                         index167: true  },
-  { key: "lens_167_fa",          label: "1.67 FA",              treatments: ["filtro azul ar", "Filtro Azul AR"],                                  index167: true  },
+const STANDARD_LENS_COLUMNS = [
+  { key: "incolor",              label: "INCOLOR",              treatments: ["incolor", "sem tratamento", "branco", "incolor hc", "padrao"], index167: false },
+  { key: "ar",                   label: "AR",                   treatments: ["ar", "anti reflexo", "antirreflexo", "anti-reflexo", "anti-reflexo ar", "anti reflexo ar", "crizal", "trio"], index167: false },
+  { key: "filtro_azul_ar",       label: "FILTRO AZUL AR",       treatments: ["filtro azul ar", "filtro azul", "blue cut", "blue uv", "blue", "blue block"], index167: false },
+  { key: "photo_ar",             label: "PHOTO AR",             treatments: ["photo ar", "fotossensivel", "transitions", "photo", "foto"], index167: false },
+  { key: "photo_filtro_azul_ar", label: "PHOTO FILTRO AZUL AR", treatments: ["photo filtro azul ar", "photo blue", "photo filtro azul", "transitions blue"], index167: false },
+  { key: "lens_167_ar",          label: "1.67 AR",              treatments: ["ar", "anti reflexo", "antirreflexo", "anti-reflexo ar"], index167: true  },
+  { key: "lens_167_fa",          label: "1.67 FA",              treatments: ["filtro azul ar", "filtro azul", "blue cut", "blue uv"], index167: true  },
 ];
 
-function getColumnKeyForItem(item) {
+function getColumnKeyForItem(item, allColumns) {
   const treatment = (item.lens_model?.treatment || item.treatment || "").trim().toLowerCase();
   const refIdx = parseFloat(item.lens_model?.refractive_index || item.refractive_index || 1.56);
   const is167 = Math.abs(refIdx - 1.67) < 0.01;
-  for (const col of LENS_COLUMNS) {
-    if (col.index167 && !is167) continue;
-    if (!col.index167 && is167) continue;
-    if (col.treatments.some(t => t.toLowerCase() === treatment)) return col.key;
+
+  if (!treatment) return "incolor";
+
+  // 1. Procura primeiro por match exato com tratamentos registrados nas colunas
+  for (const col of allColumns) {
+    if (col.treatments.some(t => treatment === t)) {
+      if (col.index167 && !is167) continue;
+      if (!col.index167 && is167 && !col.isCustom) continue;
+      return col.key;
+    }
   }
-  return null;
+
+  // 2. Se for custom col correspondente ao slug do tratamento
+  const customKey = `custom_${treatment.replace(/[^a-z0-9]/g, '_')}`;
+  const foundCustom = allColumns.find(c => c.key === customKey);
+  if (foundCustom) return customKey;
+
+  // 3. Procura por substring nas colunas
+  for (const col of allColumns) {
+    if (col.index167 && !is167) continue;
+    if (!col.index167 && is167 && !col.isCustom) continue;
+    if (col.treatments.some(t => treatment.includes(t))) return col.key;
+  }
+
+  return "incolor";
 }
 
-function getBaseKeyForItem(item) {
-  const bc = parseFloat(item.base_curve);
-  if (isNaN(bc)) return null;
-  const rounded = Math.round(bc);
-  if ([0, 2, 4, 6].includes(rounded)) return String(rounded);
-  return null;
+function getBaseKeyForItem(item, allBases) {
+  const raw = item.base_curve !== null && item.base_curve !== undefined ? item.base_curve : item.spherical;
+  if (raw === null || raw === undefined || raw === "") return allBases[0]?.key || "4";
+  const cleaned = String(raw).replace(/[^0-9.,-]/g, '').replace(',', '.');
+  const bc = parseFloat(cleaned);
+  if (isNaN(bc)) return allBases[0]?.key || "4";
+
+  const key2 = bc.toFixed(2);
+  const keyRound = String(Math.round(bc));
+  const found = allBases.find(b => b.key === key2 || b.key === keyRound || Math.abs(parseFloat(b.key) - bc) < 0.01);
+  if (found) return found.key;
+
+  return key2;
 }
 
-function buildMatrix(items) {
+function computeDynamicColumns(items = []) {
+  const standardCols = [...STANDARD_LENS_COLUMNS];
+  const customCols = [];
+  const knownKeys = new Set(standardCols.map(c => c.key));
+
+  items.forEach(item => {
+    const rawTreatment = (item.lens_model?.treatment || item.treatment || "").trim();
+    if (!rawTreatment) return;
+
+    const tLower = rawTreatment.toLowerCase();
+    // Verifica se corresponde a algum padrão por igualdade
+    const isStandard = standardCols.some(col =>
+      col.treatments.some(t => tLower === t)
+    );
+
+    if (!isStandard) {
+      const customKey = `custom_${tLower.replace(/[^a-z0-9]/g, '_')}`;
+      if (!knownKeys.has(customKey)) {
+        knownKeys.add(customKey);
+        customCols.push({
+          key: customKey,
+          label: rawTreatment.toUpperCase(),
+          treatments: [tLower],
+          index167: false,
+          isCustom: true,
+          badgeColor: '#ec4899'
+        });
+      }
+    }
+  });
+
+  return [...standardCols, ...customCols];
+}
+
+function computeDynamicBases(items = []) {
+  const baseMap = new Map();
+  STANDARD_BASES.forEach(b => baseMap.set(b.key, b));
+
+  items.forEach(item => {
+    const raw = item.base_curve !== null && item.base_curve !== undefined ? item.base_curve : item.spherical;
+    if (raw !== null && raw !== undefined && raw !== "") {
+      const cleaned = String(raw).replace(/[^0-9.,-]/g, '').replace(',', '.');
+      const bc = parseFloat(cleaned);
+      if (!isNaN(bc)) {
+        const key2 = bc.toFixed(2);
+        const keyRound = String(Math.round(bc));
+        if (!baseMap.has(keyRound) && !baseMap.has(key2)) {
+          baseMap.set(key2, {
+            key: key2,
+            label: `Base ${key2}`,
+            fullLabel: `Curva Base ${key2}`,
+            color: "#38bdf8"
+          });
+        }
+      }
+    }
+  });
+
+  return Array.from(baseMap.values()).sort((a, b) => parseFloat(a.key) - parseFloat(b.key));
+}
+
+function buildMatrix(items, allColumns, allBases) {
   const m = {};
-  BASES.forEach(b => {
+  allBases.forEach(b => {
     m[b.key] = {};
-    LENS_COLUMNS.forEach(c => { m[b.key][c.key] = { qty: 0, items: [] }; });
+    allColumns.forEach(c => { m[b.key][c.key] = { qty: 0, items: [] }; });
   });
   items.forEach(item => {
-    const baseKey = getBaseKeyForItem(item);
-    const colKey  = getColumnKeyForItem(item);
-    if (!baseKey || !colKey || !m[baseKey] || !m[baseKey][colKey]) return;
+    const baseKey = getBaseKeyForItem(item, allBases);
+    const colKey  = getColumnKeyForItem(item, allColumns);
+    if (!m[baseKey]) m[baseKey] = {};
+    if (!m[baseKey][colKey]) m[baseKey][colKey] = { qty: 0, items: [] };
     m[baseKey][colKey].qty += (item.quantity_available || 0);
     m[baseKey][colKey].items.push(item);
   });
@@ -67,6 +154,8 @@ function buildMatrix(items) {
 // ============================================================
 export default function MatrizVisaoSimples({ onOpenManualInsert }) {
   const [inventoryItems, setInventoryItems] = useState([]);
+  const [columns,       setColumns]          = useState(STANDARD_LENS_COLUMNS);
+  const [bases,         setBases]            = useState(STANDARD_BASES);
   const [gridMatrix,    setGridMatrix]       = useState({});
   const [loading,       setLoading]          = useState(false);
   const [showFullRange, setShowFullRange]    = useState(true);
@@ -88,8 +177,12 @@ export default function MatrizVisaoSimples({ onOpenManualInsert }) {
     try {
       const res = await InventoryService.getGrid(null);
       const bvs = (res.data || []).filter(it => it.lens_model?.matrix_type === "BLOCO_VS");
+      const dynCols = computeDynamicColumns(bvs);
+      const dynBases = computeDynamicBases(bvs);
+      setColumns(dynCols);
+      setBases(dynBases);
       setInventoryItems(bvs);
-      setGridMatrix(buildMatrix(bvs));
+      setGridMatrix(buildMatrix(bvs, dynCols, dynBases));
     } catch (err) {
       console.error("Erro ao carregar Bloco VS:", err);
     } finally {
@@ -101,13 +194,13 @@ export default function MatrizVisaoSimples({ onOpenManualInsert }) {
   const cellQ = (bk, ck) => cell(bk, ck).qty;
   const cellI = (bk, ck) => cell(bk, ck).items;
 
-  const rowTotal   = bk => LENS_COLUMNS.reduce((a, c) => a + cellQ(bk, c.key), 0);
-  const colTotal   = ck => BASES.reduce((a, b) => a + cellQ(b.key, ck), 0);
-  const grandTotal = ()  => BASES.reduce((a, b) => a + rowTotal(b.key), 0);
+  const rowTotal   = bk => columns.reduce((a, c) => a + cellQ(bk, c.key), 0);
+  const colTotal   = ck => bases.reduce((a, b) => a + cellQ(b.key, ck), 0);
+  const grandTotal = ()  => bases.reduce((a, b) => a + rowTotal(b.key), 0);
 
   // Conta celulas com estoque <= 2 (ruptura ou critico)
   let ruptureCount = 0;
-  BASES.forEach(b => LENS_COLUMNS.forEach(c => { if (cellQ(b.key, c.key) <= 2) ruptureCount++; }));
+  bases.forEach(b => columns.forEach(c => { if (cellQ(b.key, c.key) <= 2) ruptureCount++; }));
 
   const getCellClass = (qty, items = []) => {
     if (qty === 0) return 'lens-cell empty';
@@ -151,8 +244,7 @@ export default function MatrizVisaoSimples({ onOpenManualInsert }) {
       await loadInventory();
       // Atualiza selectedCell com dados frescos
       if (selectedCell) {
-        const freshItems = buildMatrix(inventoryItems)[selectedCell.base.key]?.[selectedCell.col.key]?.items || [];
-        const freshQty   = freshItems.reduce((s, it) => s + (it.quantity_available || 0), 0);
+        const freshItems = buildMatrix(inventoryItems, columns, bases)[selectedCell.base.key]?.[selectedCell.col.key]?.items || [];
         setSelectedCell(prev => ({ ...prev }));
       }
       setEditingItemId(null);
@@ -166,8 +258,8 @@ export default function MatrizVisaoSimples({ onOpenManualInsert }) {
   // Exportar PDF
   const handleExportPDF = () => {
     const critical = [];
-    BASES.forEach(b => {
-      LENS_COLUMNS.forEach(c => {
+    bases.forEach(b => {
+      columns.forEach(c => {
         const q = cellQ(b.key, c.key);
         if (q <= 2) critical.push({ base: b.fullLabel, treatment: c.label, qty: q, items: cellI(b.key, c.key) });
       });
@@ -215,13 +307,13 @@ export default function MatrizVisaoSimples({ onOpenManualInsert }) {
   };
 
   const visibleColumns = (() => {
-    let cols = showFullRange ? LENS_COLUMNS : LENS_COLUMNS.filter(c => !c.key.includes("167"));
+    let cols = showFullRange ? columns : columns.filter(c => !c.key.includes("167"));
     if (filterColKey) cols = cols.filter(c => c.key === filterColKey);
     return cols;
   })();
   const visibleBases = searchBase
-    ? BASES.filter(b => b.label.toLowerCase().includes(searchBase.toLowerCase()) || b.key === searchBase || b.fullLabel.toLowerCase().includes(searchBase.toLowerCase()))
-    : BASES;
+    ? bases.filter(b => b.label.toLowerCase().includes(searchBase.toLowerCase()) || b.key === searchBase || b.fullLabel.toLowerCase().includes(searchBase.toLowerCase()))
+    : bases;
   const gt = grandTotal();
 
   // Celulas selecionadas (para o modal)
@@ -284,8 +376,10 @@ export default function MatrizVisaoSimples({ onOpenManualInsert }) {
             onChange={e => setFilterColKey(e.target.value)}
           >
             <option value="">Todos os Tratamentos (Visão Consolidada)</option>
-            {LENS_COLUMNS.map(col => (
-              <option key={col.key} value={col.key}>{col.label}</option>
+            {columns.map(col => (
+              <option key={col.key} value={col.key}>
+                {col.label} {col.isCustom ? '(Personalizado)' : ''}
+              </option>
             ))}
           </select>
         </div>
@@ -332,7 +426,14 @@ export default function MatrizVisaoSimples({ onOpenManualInsert }) {
                 </th>
                 {visibleColumns.map(col => (
                   <th key={col.key} style={{ textAlign: "center" }}>
-                    {col.label}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                      <span>{col.label}</span>
+                      {col.isCustom && (
+                        <span style={{ fontSize: '0.65rem', background: '#ec4899', color: '#fff', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                          NOVO
+                        </span>
+                      )}
+                    </div>
                   </th>
                 ))}
               </tr>
