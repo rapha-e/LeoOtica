@@ -13,8 +13,13 @@ class NfeSaida(Base):
     nfe_number: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
     serie: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     chave_acesso: Mapped[str] = mapped_column(String(44), nullable=False, unique=True)
-    xml_content: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="EMITIDA", nullable=False)  # 'EMITIDA', 'CANCELADA'
+    xml_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="EMITIDA", nullable=False)  # 'EMITIDA', 'AUTORIZADA', 'PROCESSANDO', 'REJEITADA', 'CANCELADA'
+    focus_ref: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    protocolo: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    danfe_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    xml_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    mensagem_sefaz: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     emitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 

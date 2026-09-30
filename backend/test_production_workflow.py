@@ -35,7 +35,7 @@ class TestProductionWorkflowAndTraceability(unittest.IsolatedAsyncioTestCase):
             await session.flush()
 
             self.operator = User(
-                email="operador_esteira@leootica.com.br",
+                email="operador_esteira@Nova Lab.com.br",
                 hashed_password="hashed_password",
                 name="José Operador da Esteira",
                 role=role_operador,

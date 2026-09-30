@@ -10,15 +10,17 @@ from backend.app.schemas.billing import (
     BillingCycleCreate,
     BillingCycleResponse,
     PendingBillingGroupResponse,
-    PendingOrderResponse
+    PendingOrderResponse,
+    BillingCycleStatusUpdate
 )
 from backend.app.schemas.nfe import NfeSaidaResponse
 from backend.app.crud import billing as crud_billing
 from backend.app.crud import nfe as crud_nfe
-from backend.app.api.deps import get_current_active_operator
+from backend.app.api.deps import get_current_active_operator, get_current_active_admin
 from backend.app.services.pdf_generator import generate_billing_pdf
 from backend.app.services.excel_generator import generate_billing_excel
 from backend.app.services.nfe_emitter import generate_danfe_pdf
+from backend.app.services.focus_nfe_service import FocusNfeService
 
 router = APIRouter()
 
@@ -92,6 +94,16 @@ async def list_cycles(
         db, optical_store_id=optical_store_id, skip=skip, limit=limit
     )
 
+@router.get("/nfe/status-connection")
+async def get_focus_nfe_connection_status(
+    current_user: Any = Depends(get_current_active_operator)
+):
+    """
+    Retorna o status da integração com a Focus NFe (ativo, ambiente e teste de conectividade).
+    """
+    service = FocusNfeService()
+    return await service.check_connection()
+
 @router.get("/{cycle_id}", response_model=BillingCycleResponse)
 async def get_cycle(
     cycle_id: uuid.UUID,
@@ -113,16 +125,41 @@ async def get_cycle(
 async def pay_cycle(
     cycle_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: Any = Depends(get_current_active_operator)
+    current_user: Any = Depends(get_current_active_admin)
 ):
     """
-    Quita um ciclo de faturamento pendente (status FECHADO -> PAGO).
+    Quita um ciclo de faturamento pendente (status FECHADO -> PAGO). Restrito a Administradores.
     """
     cycle = await crud_billing.pay_billing_cycle(db, cycle_id)
     if not cycle:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ciclo de faturamento não encontrado ou não pôde ser quitado."
+        )
+    return cycle
+
+
+@router.put("/{cycle_id}/status", response_model=BillingCycleResponse)
+async def update_cycle_status(
+    cycle_id: uuid.UUID,
+    payload: BillingCycleStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(get_current_active_admin)
+):
+    """
+    Atualiza o status do ciclo de faturamento (PAGO ou FECHADO). Restrito a Administradores.
+    """
+    try:
+        cycle = await crud_billing.update_billing_cycle_status(db, cycle_id, payload.status)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    if not cycle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ciclo de faturamento não encontrado."
         )
     return cycle
 
@@ -193,10 +230,28 @@ async def emit_nfe(
     current_user: Any = Depends(get_current_active_operator)
 ):
     """
-    Emite a NF-e simulada para o ciclo de faturamento.
+    Emite a NF-e para o ciclo de faturamento (via Focus NFe se configurada ou em modo Simulação).
     """
     try:
         return await crud_nfe.create_nfe_saida(db, cycle_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.post("/{cycle_id}/nfe/sync", response_model=NfeSaidaResponse)
+async def sync_nfe(
+    cycle_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(get_current_active_operator)
+):
+    """
+    Sincroniza o status da NF-e junto à Focus NFe / SEFAZ (atualiza chaves, status e URLs do DANFE e XML).
+    """
+    try:
+        return await crud_nfe.sync_nfe_saida(db, cycle_id)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -212,6 +267,7 @@ async def get_nfe_xml(
 ):
     """
     Retorna o conteúdo XML da NF-e emitida para download.
+    Se a nota foi autorizada via Focus NFe, busca o XML oficial com protocolo da SEFAZ.
     """
     nfe = await crud_nfe.get_nfe_by_cycle_id(db, cycle_id)
     if not nfe:
@@ -220,6 +276,23 @@ async def get_nfe_xml(
             detail="Nota fiscal não encontrada para este ciclo."
         )
     
+    # Se possui URL externa da Focus NFe e ainda não baixou o conteúdo oficial
+    if nfe.xml_url and not nfe.xml_content:
+        service = FocusNfeService()
+        if service.is_configured:
+            try:
+                xml_b = await service.download_file(nfe.xml_url)
+                nfe.xml_content = xml_b.decode("utf-8", errors="ignore")
+                await db.commit()
+            except Exception:
+                pass
+
+    if not nfe.xml_content:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conteúdo XML não disponível para esta nota no momento."
+        )
+
     filename = f"nfe_{nfe.nfe_number:06d}.xml"
     return StreamingResponse(
         io.BytesIO(nfe.xml_content.encode("utf-8")),
@@ -236,6 +309,7 @@ async def get_nfe_danfe(
 ):
     """
     Gera e fornece para download/visualização o PDF do DANFE da nota fiscal emitida.
+    Prioriza o DANFE oficial gerado pela Focus NFe quando disponível.
     """
     nfe = await crud_nfe.get_nfe_by_cycle_id(db, cycle_id)
     if not nfe:
@@ -244,7 +318,22 @@ async def get_nfe_danfe(
             detail="Nota fiscal não encontrada para este ciclo."
         )
     
-    # Busca o ciclo
+    # Se houver danfe_url fornecida pela Focus NFe, baixa o PDF oficial
+    if nfe.danfe_url:
+        service = FocusNfeService()
+        if service.is_configured:
+            try:
+                pdf_bytes = await service.download_file(nfe.danfe_url)
+                filename = f"danfe_{nfe.nfe_number:06d}.pdf"
+                return StreamingResponse(
+                    io.BytesIO(pdf_bytes),
+                    media_type="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
+                )
+            except Exception:
+                pass
+
+    # Fallback para o gerador de DANFE local
     cycle = await crud_billing.get_billing_cycle(db, cycle_id)
     if not cycle:
         raise HTTPException(
@@ -266,14 +355,15 @@ async def get_nfe_danfe(
 @router.post("/{cycle_id}/nfe/cancel", response_model=NfeSaidaResponse)
 async def cancel_nfe(
     cycle_id: uuid.UUID,
+    justification: Optional[str] = Query(None, description="Justificativa do cancelamento"),
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(get_current_active_operator)
 ):
     """
-    Cancela fiscalmente a nota emitida para o ciclo.
+    Cancela a nota fiscal vinculada ao ciclo (na SEFAZ se via Focus NFe ou em simulação).
     """
     try:
-        return await crud_nfe.cancel_nfe_saida(db, cycle_id)
+        return await crud_nfe.cancel_nfe_saida(db, cycle_id, justification=justification)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -30,7 +30,7 @@ from backend.app.schemas.os_factory import (
 
 async def run_master_end_to_end_test():
     print("=" * 80)
-    print("🚀 INICIANDO TESTE MASTER COMPLETO DO ECOSSISTEMA LEOOTICA / OPTIMIND")
+    print("🚀 INICIANDO TESTE MASTER COMPLETO DO ECOSSISTEMA Nova Lab / OPTIMIND")
     print("=" * 80)
 
     # 0. Garante a criação de tabelas e migrações no banco

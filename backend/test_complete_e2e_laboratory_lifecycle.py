@@ -17,7 +17,7 @@ from backend.app.schemas.movement import StockMovementCreate
 @pytest.mark.asyncio
 async def test_complete_e2e_laboratory_lifecycle():
     """
-    TESTE PONTA A PONTA (E2E) - CICLO COMPLETO DO LEOÓTICAS:
+    TESTE PONTA A PONTA (E2E) - CICLO COMPLETO DO Nova Lab:
     1. Cadastro de Estoque Inicial com Preço de Custo Manual.
     2. Entrada adicional via Compra/XML recalculando o Custo Médio Ponderado (CMP).
     3. Consulta via Bipador e Abertura de OS com Reserva Atômica.

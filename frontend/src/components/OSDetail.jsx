@@ -351,7 +351,7 @@ const OSDetail = ({ osId, onClose }) => {
                           {item.name || (item.entity_type === 'product' ? 'Produto / Lente' : item.entity_type === 'treatment' ? 'Tratamento' : 'Serviço Técnico')}
                         </td>
                         <td style={{ padding: '6px', color: '#cbd5e1' }}>
-                          {item.description || item.name || 'Sem descrição cadastrada'}
+                          {item.entity_type === 'product' ? 'Lente Oftálmica' : (item.description || item.name || 'Sem descrição cadastrada')}
                         </td>
                         <td style={{ padding: '6px', color: '#94a3b8' }}>
                           {item.entity_type === 'product' ? 'Produto' : item.entity_type === 'treatment' ? 'Tratamento' : 'Serviço'}

@@ -42,7 +42,7 @@ class TestFinancialCatalog(unittest.IsolatedAsyncioTestCase):
 
             # Cadastra um usuário para associar às alterações de preço
             self.user = User(
-                email="operador@leootica.com.br",
+                email="operador@Nova Lab.com.br",
                 hashed_password="hashed_password",
                 name="Operador Financeiro",
                 role=role_operador,

@@ -17,7 +17,7 @@ from backend.app.schemas.movement import StockMovementCreate
 @pytest.mark.asyncio
 async def test_complete_enterprise_lifecycle():
     """
-    TESTE PONTA A PONTA (E2E) — LEOÓTICAS v2.0 ENTERPRISE
+    TESTE PONTA A PONTA (E2E) — Nova Lab v2.0 ENTERPRISE
     
     Cobre todos os módulos do relatório:
     1. [Estoque/WMS]: Cadastro de lente, bipador EAN e entrada com CMP (Custo Médio Ponderado).

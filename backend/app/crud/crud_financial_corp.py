@@ -196,17 +196,63 @@ async def get_accounts_payable(db: AsyncSession, status_filter: Optional[str] = 
         
     items = (await db.execute(stmt)).scalars().all()
     now = datetime.now(timezone.utc)
+    today = now.date()
     
     res = []
     for item in items:
         days_overdue = 0
+        days_until_due = 0
         current_status = item.status
         due = item.due_date
+        
         if due:
             due_aware = due.replace(tzinfo=timezone.utc) if due.tzinfo is None else due.astimezone(timezone.utc)
-            if current_status in ["PENDENTE", "PAGO_PARCIAL"] and due_aware < now:
-                days_overdue = (now - due_aware).days
+            due_date_only = due_aware.date()
+            days_until_due = (due_date_only - today).days
             
+            if current_status in ["PENDENTE", "PAGO_PARCIAL"] and due_aware < now:
+                days_overdue = max(1, (now - due_aware).days)
+        
+        alert_enabled = getattr(item, 'alert_enabled', True)
+        if alert_enabled is None:
+            alert_enabled = True
+            
+        alert_dismissed = getattr(item, 'alert_dismissed', False)
+        if alert_dismissed is None:
+            alert_dismissed = False
+            
+        alert_days_before = getattr(item, 'alert_days_before', 3)
+        if alert_days_before is None:
+            alert_days_before = 3
+            
+        dismissed_at = getattr(item, 'dismissed_at', None)
+
+        # Regra de disparo de alerta ativo:
+        # 1. Conta não está PAGA
+        # 2. Alerta está habilitado para esta conta
+        # 3. Operador NÃO dispensou o alerta
+        # 4. A data de vencimento está dentro da janela de antecedência (dias restantes <= alert_days_before) ou já venceu
+        is_alert_active = bool(
+            current_status not in ["PAGO", "CANCELADO"] and
+            alert_enabled and
+            not alert_dismissed and
+            (days_until_due <= alert_days_before)
+        )
+
+        # Texto do status de alerta amigável
+        if current_status == "PAGO":
+            alert_status_text = "QUITADO"
+        elif alert_dismissed:
+            alert_status_text = "SILENCIADO"
+        elif not alert_enabled:
+            alert_status_text = "DESATIVADO"
+        elif days_until_due < 0:
+            alert_status_text = f"VENCIDO HÁ {abs(days_until_due)} DIA{'S' if abs(days_until_due) > 1 else ''}"
+        elif days_until_due == 0:
+            alert_status_text = "VENCE HOJE"
+        else:
+            alert_status_text = f"VENCE EM {days_until_due} DIA{'S' if days_until_due > 1 else ''}"
+
         res.append({
             "id": item.id,
             "description": item.description,
@@ -220,7 +266,14 @@ async def get_accounts_payable(db: AsyncSession, status_filter: Optional[str] = 
             "status": current_status,
             "category_name": item.category.name if item.category else "Geral",
             "cost_center_name": item.cost_center.name if item.cost_center else "Fábrica Principal",
-            "days_overdue": days_overdue
+            "days_overdue": days_overdue,
+            "days_until_due": days_until_due,
+            "alert_enabled": alert_enabled,
+            "alert_dismissed": alert_dismissed,
+            "alert_days_before": alert_days_before,
+            "dismissed_at": dismissed_at,
+            "is_alert_active": is_alert_active,
+            "alert_status_text": alert_status_text
         })
     return res
 
@@ -234,12 +287,54 @@ async def create_account_payable(db: AsyncSession, data: Dict[str, Any]) -> Acco
         due_date=data["due_date"],
         category_id=data.get("category_id"),
         cost_center_id=data.get("cost_center_id"),
+        alert_enabled=bool(data.get("alert_enabled", True)),
+        alert_dismissed=False,
+        alert_days_before=int(data.get("alert_days_before", 3)),
+        dismissed_at=None,
         notes=data.get("notes")
     )
     db.add(payable)
     await db.commit()
     await db.refresh(payable)
     return payable
+
+async def dismiss_payable_alert(db: AsyncSession, payable_id: uuid.UUID) -> AccountsPayable:
+    """
+    O operador opta por não ser mais alertado sobre esta conta a pagar específica.
+    """
+    stmt = select(AccountsPayable).where(AccountsPayable.id == payable_id)
+    payable = (await db.execute(stmt)).scalar_one_or_none()
+    if not payable:
+        raise ValueError("Conta a pagar não encontrada.")
+        
+    payable.alert_dismissed = True
+    payable.dismissed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(payable)
+    return payable
+
+async def reactivate_payable_alert(db: AsyncSession, payable_id: uuid.UUID) -> AccountsPayable:
+    """
+    Reativa o monitoramento de alerta para uma conta a pagar previamente silenciada.
+    """
+    stmt = select(AccountsPayable).where(AccountsPayable.id == payable_id)
+    payable = (await db.execute(stmt)).scalar_one_or_none()
+    if not payable:
+        raise ValueError("Conta a pagar não encontrada.")
+        
+    payable.alert_dismissed = False
+    payable.alert_enabled = True
+    payable.dismissed_at = None
+    await db.commit()
+    await db.refresh(payable)
+    return payable
+
+async def get_active_payable_alerts(db: AsyncSession) -> List[Dict[str, Any]]:
+    """
+    Retorna apenas as contas a pagar com alertas de vencimento ativos (não dispensadas pelo operador).
+    """
+    all_payables = await get_accounts_payable(db)
+    return [p for p in all_payables if p.get("is_alert_active")]
 
 async def pay_account_payable(db: AsyncSession, payable_id: uuid.UUID, payment_amount: float) -> AccountsPayable:
     stmt = select(AccountsPayable).options(selectinload(AccountsPayable.category)).where(AccountsPayable.id == payable_id)

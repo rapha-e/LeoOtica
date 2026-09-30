@@ -19,8 +19,8 @@ def generate_billing_excel(cycle) -> bytes:
         if detailed_list:
             for detail in detailed_list:
                 d_name = getattr(detail, "name", "") or "Item"
-                d_desc = getattr(detail, "description", "") or "-"
                 d_type = getattr(detail, "item_type", "") or "Serviço"
+                d_desc = "Lente Oftálmica" if d_type == "Lente" else (getattr(detail, "description", "") or "-")
                 d_qty = getattr(detail, "quantity", 1)
                 d_uprice = float(getattr(detail, "unit_price", 0.0) or 0.0)
                 d_tprice = float(getattr(detail, "total_price", 0.0) or (d_uprice * d_qty))
@@ -44,7 +44,7 @@ def generate_billing_excel(cycle) -> bytes:
                 "Código da OS": os_num,
                 "Paciente / Cliente Final": client,
                 "Item / Serviço": lens_txt,
-                "Descrição do Catálogo": "Lente Oftálmica Visão Simples / Digital",
+                "Descrição do Catálogo": "Lente Oftálmica",
                 "Tipo": "Lente",
                 "Quantidade": "2 un",
                 "Valor Unitário (R$)": round(lens_price_val / 2, 2) if lens_price_val > 0 else 0.0,

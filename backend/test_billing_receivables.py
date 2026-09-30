@@ -28,7 +28,7 @@ class TestBillingReceivables(unittest.IsolatedAsyncioTestCase):
         async with self.async_session() as session:
             self.store = OpticalStore(
                 corporate_name="Optica Recebiveis Ltda",
-                trade_name="Leo Otica Recebiveis",
+                trade_name="Nova Lab Recebiveis",
                 cnpj="55.555.555/0001-55",
                 is_active=True
             )

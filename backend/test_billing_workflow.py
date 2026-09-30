@@ -33,13 +33,13 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
             # 1. Cadastra Óticas de teste
             self.store1 = OpticalStore(
                 corporate_name="Optica Leo Comercial 1 Ltda",
-                trade_name="Leo Otica Centro",
+                trade_name="Nova Lab Centro",
                 cnpj="11.111.111/0001-11",
                 is_active=True
             )
             self.store2 = OpticalStore(
                 corporate_name="Optica Leo Comercial 2 Ltda",
-                trade_name="Leo Otica Shopping",
+                trade_name="Nova Lab Shopping",
                 cnpj="22.222.222/0002-22",
                 is_active=True
             )
@@ -125,7 +125,7 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
             g1 = next(g for g in groups if g["optical_store_id"] == self.store1.id)
             self.assertEqual(g1["pending_os_count"], 2)
             self.assertEqual(g1["estimated_total_amount"], 400.00)
-            self.assertEqual(g1["optical_store_name"], "Leo Otica Centro")
+            self.assertEqual(g1["optical_store_name"], "Nova Lab Centro")
             
             # Achar grupo da store2
             g2 = next(g for g in groups if g["optical_store_id"] == self.store2.id)
@@ -156,7 +156,7 @@ class TestBillingWorkflow(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(cycle.status, "FECHADO")
             self.assertEqual(cycle.total_amount, 300.00)
             self.assertEqual(len(cycle.items), 2)
-            self.assertEqual(cycle.optical_store_name, "Leo Otica Centro")
+            self.assertEqual(cycle.optical_store_name, "Nova Lab Centro")
             
             # Verificar se os itens carregam os dados da OS
             item_os_numbers = {item.os_number for item in cycle.items}

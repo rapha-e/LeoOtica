@@ -35,7 +35,7 @@ class TestPriceOverrideAndAssemblyServices(unittest.IsolatedAsyncioTestCase):
             await session.flush()
 
             self.operator = User(
-                email="operator_faturamento@leootica.com.br",
+                email="operator_faturamento@Nova Lab.com.br",
                 hashed_password="hashed_password",
                 name="Maria Faturamento",
                 role=role_operador,

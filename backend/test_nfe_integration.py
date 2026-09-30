@@ -32,7 +32,7 @@ class TestNfeIntegration(unittest.IsolatedAsyncioTestCase):
         async with self.async_session() as session:
             self.store = OpticalStore(
                 corporate_name="Optica Fiscal Ltda",
-                trade_name="Leo Otica Fiscal",
+                trade_name="Nova Lab Fiscal",
                 cnpj="12.345.678/0001-99",
                 is_active=True,
                 address="Av. Paulista, 1000 - Bela Vista"

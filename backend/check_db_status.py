@@ -3,7 +3,7 @@ import sys
 import os
 from sqlalchemy import select, func
 
-sys.path.insert(0, r'c:\Users\rapha\Documents\LeoOtica')
+sys.path.insert(0, r'c:\Users\rapha\Documents\Nova Lab')
 
 from backend.app.core.database import AsyncSessionLocal
 from backend.app.models.user import User

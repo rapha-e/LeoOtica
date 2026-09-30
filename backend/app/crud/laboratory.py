@@ -24,7 +24,8 @@ async def update_laboratory(db: AsyncSession, obj_in: LaboratoryUpdate) -> Labor
             address=obj_in.address,
             cep=obj_in.cep,
             telephone=obj_in.telephone,
-            cnpj=obj_in.cnpj
+            cnpj=obj_in.cnpj,
+            ie=obj_in.ie
         )
         db.add(db_obj)
     else:
@@ -33,6 +34,7 @@ async def update_laboratory(db: AsyncSession, obj_in: LaboratoryUpdate) -> Labor
         db_obj.cep = obj_in.cep
         db_obj.telephone = obj_in.telephone
         db_obj.cnpj = obj_in.cnpj
+        db_obj.ie = obj_in.ie
         db.add(db_obj)
         
     await db.commit()

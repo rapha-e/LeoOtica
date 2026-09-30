@@ -2,9 +2,47 @@ import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, DollarSign, Package, Factory, ShoppingCart, TrendingUp, 
   AlertTriangle, RefreshCw, Clock, CheckCircle, ShieldAlert, Cpu, ArrowRight, X,
-  Plus, Building2, TrendingDown, Filter, Calendar, CreditCard
+  Plus, Building2, TrendingDown, Filter, Calendar, CreditCard,
+  Bell, BellOff, Check, AlertCircle, CalendarClock
 } from 'lucide-react';
 import api from '../services/api';
+
+const EXPENSE_CATEGORIES = [
+  'Fornecedores e compras',
+  'Despesas operacionais',
+  'Salários, pró-labore e benefícios',
+  'Impostos e taxas',
+  'Empréstimos, despesas financeiras',
+  'Outros exemplos de contas a pagar'
+];
+
+const EXPENSE_DESCRIPTIONS_MAP = {
+  'Fornecedores e compras': [
+    'Pagamentos a fornecedores de matéria-prima, insumos ou mercadorias',
+    'Faturas de compras de produtos ou serviços necessários para a operação da empresa.'
+  ],
+  'Despesas operacionais': [
+    'Aluguel das instalações operacionais ou do escritório',
+    'Contas de serviços públicos (água, luz, gás)',
+    'Fatura de telefone e internet',
+    'Manutenção e reparos de equipamentos e instalações.'
+  ],
+  'Salários, pró-labore e benefícios': [
+    'Pagamentos de salários dos funcionários',
+    'Pagamento do plano de saúde, vale-refeição, vale-transporte, etc.',
+    'Pagamento do pró-labore dos sócios que trabalham na empresa.'
+  ],
+  'Impostos e taxas': [
+    'Pagamentos de impostos federais, estaduais e municipais',
+    'Taxas regulatórias ou licenças esporádicas ou recorrentes.'
+  ],
+  'Empréstimos, despesas financeiras': [
+    'Amortização de empréstimos ou financiamentos',
+    'Pagamento de juros sobre dívidas',
+    'Taxas bancárias.'
+  ],
+  'Outros exemplos de contas a pagar': []
+};
 
 export default function DashboardExecutivo({ onNavigate }) {
   const [loading, setLoading] = useState(true);
@@ -32,7 +70,13 @@ export default function DashboardExecutivo({ onNavigate }) {
 
   const [payableModalOpen, setPayableModalOpen] = useState(false);
   const [newPayable, setNewPayable] = useState({
-    description: '', supplier_name: '', document_number: '', amount: '', due_date: new Date().toISOString().split('T')[0]
+    supplier_name: 'Fornecedores e compras',
+    description: 'Pagamentos a fornecedores de matéria-prima, insumos ou mercadorias',
+    document_number: '',
+    amount: '',
+    due_date: new Date().toISOString().split('T')[0],
+    alert_enabled: true,
+    alert_days_before: 3
   });
 
   const showToast = (msg) => {
@@ -105,6 +149,16 @@ export default function DashboardExecutivo({ onNavigate }) {
     }
   };
 
+  const handleCategoryChange = (category) => {
+    const options = EXPENSE_DESCRIPTIONS_MAP[category] || [];
+    const defaultDesc = options.length > 0 ? options[0] : '';
+    setNewPayable(prev => ({
+      ...prev,
+      supplier_name: category,
+      description: defaultDesc
+    }));
+  };
+
   const handleCreatePayable = async (e) => {
     e.preventDefault();
     try {
@@ -113,7 +167,15 @@ export default function DashboardExecutivo({ onNavigate }) {
         amount: parseFloat(newPayable.amount)
       });
       setPayableModalOpen(false);
-      setNewPayable({ description: '', supplier_name: '', document_number: '', amount: '', due_date: new Date().toISOString().split('T')[0] });
+      setNewPayable({
+        supplier_name: 'Fornecedores e compras',
+        description: 'Pagamentos a fornecedores de matéria-prima, insumos ou mercadorias',
+        document_number: '',
+        amount: '',
+        due_date: new Date().toISOString().split('T')[0],
+        alert_enabled: true,
+        alert_days_before: 3
+      });
       fetchData();
       showToast('Conta a pagar cadastrada com sucesso!');
     } catch (err) {
@@ -129,6 +191,26 @@ export default function DashboardExecutivo({ onNavigate }) {
       showToast('Pagamento registrado com sucesso!');
     } catch (err) {
       alert(err.response?.data?.detail || 'Erro ao baixar conta a pagar.');
+    }
+  };
+
+  const handleDismissAlert = async (payableId) => {
+    try {
+      await api.post(`/finance-corp/payables/${payableId}/dismiss-alert`);
+      fetchData();
+      showToast('Alerta da conta silenciado pelo operador!');
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro ao dispensar alerta.');
+    }
+  };
+
+  const handleReactivateAlert = async (payableId) => {
+    try {
+      await api.post(`/finance-corp/payables/${payableId}/reactivate-alert`);
+      fetchData();
+      showToast('Alerta de vencimento reativado com sucesso!');
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro ao reativar alerta.');
     }
   };
 
@@ -171,6 +253,108 @@ export default function DashboardExecutivo({ onNavigate }) {
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Atualizando...' : 'Atualizar Dados'}
         </button>
       </div>
+
+      {/* Banner de Alertas Ativos de Contas a Pagar (Monitoramento de Vencimento com Dispensa) */}
+      {payables.filter(p => p.is_alert_active).length > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.06), rgba(245, 158, 11, 0.08))',
+          border: '1px solid rgba(239, 68, 68, 0.25)',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '24px',
+          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.05)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ background: '#ef4444', color: '#fff', padding: '6px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '0.8rem' }}>
+                <Bell size={16} /> ALERTA DE CONTAS A PAGAR ({payables.filter(p => p.is_alert_active).length})
+              </div>
+              <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.95rem' }}>
+                Compromissos financeiros vencidos ou com vencimento iminente
+              </span>
+            </div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '4px 12px', borderRadius: '20px' }}>
+              Total em Alerta: {formatCurrency(payables.filter(p => p.is_alert_active).reduce((acc, p) => acc + (p.balance_due || 0), 0))}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', gap: '12px' }}>
+            {payables.filter(p => p.is_alert_active).map(item => (
+              <div key={item.id} style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '12px 16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ minWidth: 0, marginRight: '12px' }}>
+                  <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {item.supplier_name}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {item.description}
+                  </div>
+                  <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      background: item.days_until_due < 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: item.days_until_due < 0 ? '#ef4444' : '#d97706'
+                    }}>
+                      {item.alert_status_text}
+                    </span>
+                    <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>
+                      {formatCurrency(item.balance_due)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0 }}>
+                  <button
+                    onClick={() => handlePayPayable(item.id, item.balance_due)}
+                    style={{
+                      padding: '6px 14px',
+                      background: '#2563eb',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Pagar
+                  </button>
+                  <button
+                    onClick={() => handleDismissAlert(item.id)}
+                    title="Não alertar mais sobre esta conta"
+                    style={{
+                      padding: '5px 10px',
+                      background: '#f8fafc',
+                      color: '#64748b',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <BellOff size={13} /> Não alertar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Navegação por Sub-Abas do Dashboard Executivo Aprimorado */}
       <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid rgba(224,230,240,0.8)', marginBottom: '24px', overflowX: 'auto' }}>
@@ -531,9 +715,10 @@ export default function DashboardExecutivo({ onNavigate }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
               <tr style={{ background: 'rgba(15,23,42,0.04)', borderBottom: '2px solid rgba(224,230,240,0.8)', color: '#475569', textAlign: 'left' }}>
-                <th style={{ padding: '10px' }}>Fornecedor</th>
+                <th style={{ padding: '10px' }}>Despesas Operacionais e Financeiras</th>
                 <th style={{ padding: '10px' }}>Descrição / Doc</th>
                 <th style={{ padding: '10px' }}>Vencimento</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>Alerta de Vencimento</th>
                 <th style={{ padding: '10px', textAlign: 'right' }}>Valor Total</th>
                 <th style={{ padding: '10px', textAlign: 'right' }}>Valor Pago</th>
                 <th style={{ padding: '10px', textAlign: 'center' }}>Status</th>
@@ -543,16 +728,46 @@ export default function DashboardExecutivo({ onNavigate }) {
             <tbody>
               {filteredPayables.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
                     Nenhuma conta localizada para o filtro selecionado.
                   </td>
                 </tr>
               ) : (
                 filteredPayables.map((pay) => (
-                  <tr key={pay.id} style={{ borderBottom: '1px solid rgba(224,230,240,0.5)' }}>
+                  <tr key={pay.id} style={{ borderBottom: '1px solid rgba(224,230,240,0.5)', background: pay.is_alert_active ? 'rgba(239,68,68,0.02)' : 'transparent' }}>
                     <td style={{ padding: '10px', fontWeight: 600, color: '#0f172a' }}>{pay.supplier_name}</td>
                     <td style={{ padding: '10px', color: '#334155' }}>{pay.description} {pay.document_number ? `(${pay.document_number})` : ''}</td>
                     <td style={{ padding: '10px', color: '#334155' }}>{pay.due_date ? new Date(pay.due_date).toLocaleDateString('pt-BR') : '-'}</td>
+                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                      {pay.status === 'PAGO' ? (
+                        <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>Quitado</span>
+                      ) : pay.alert_dismissed ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '8px', fontSize: '0.72rem', background: '#f1f5f9', color: '#64748b', fontWeight: 600 }}>
+                          <BellOff size={12} /> Silenciado
+                        </span>
+                      ) : !pay.alert_enabled ? (
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Desativado</span>
+                      ) : pay.is_alert_active ? (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '3px 8px',
+                          borderRadius: '8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          background: pay.days_until_due < 0 ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                          color: pay.days_until_due < 0 ? '#ef4444' : '#d97706'
+                        }}>
+                          {pay.days_until_due < 0 ? <AlertTriangle size={12} /> : <Bell size={12} />}
+                          {pay.alert_status_text}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#64748b', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} /> Monitorado (-{pay.alert_days_before}d)
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600, color: '#0f172a' }}>{formatCurrency(pay.amount)}</td>
                     <td style={{ padding: '10px', textAlign: 'right', color: '#10b981', fontWeight: 600 }}>{formatCurrency(pay.amount_paid)}</td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
@@ -565,14 +780,35 @@ export default function DashboardExecutivo({ onNavigate }) {
                       </span>
                     </td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      {pay.status !== 'PAGO' && (
-                        <button
-                          onClick={() => handlePayPayable(pay.id, pay.balance_due)}
-                          style={{ padding: '6px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
-                        >
-                          Pagar
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                        {pay.status !== 'PAGO' && (
+                          <button
+                            onClick={() => handlePayPayable(pay.id, pay.balance_due)}
+                            style={{ padding: '5px 10px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem' }}
+                          >
+                            Pagar
+                          </button>
+                        )}
+                        {pay.status !== 'PAGO' && (
+                          pay.alert_dismissed ? (
+                            <button
+                              onClick={() => handleReactivateAlert(pay.id)}
+                              title="Reativar monitoramento de alerta para esta conta"
+                              style={{ padding: '4px 8px', background: '#f8fafc', color: '#2563eb', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                            >
+                              <Bell size={12} /> Reativar
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDismissAlert(pay.id)}
+                              title="Não alertar mais sobre esta conta"
+                              style={{ padding: '4px 8px', background: '#f8fafc', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                            >
+                              <BellOff size={12} /> Silenciar
+                            </button>
+                          )
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -694,12 +930,69 @@ export default function DashboardExecutivo({ onNavigate }) {
             <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '16px', color: '#0f172a' }}>Nova Conta a Pagar da Fábrica</h3>
             <form onSubmit={handleCreatePayable}>
               <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px', color: '#334155' }}>Fornecedor</label>
-                <input type="text" required value={newPayable.supplier_name} onChange={(e) => setNewPayable({ ...newPayable, supplier_name: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px', color: '#334155' }}>
+                  Despesas operacionais e financeiras
+                </label>
+                <select 
+                  required 
+                  value={newPayable.supplier_name} 
+                  onChange={(e) => handleCategoryChange(e.target.value)} 
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.85rem', color: '#0f172a' }}
+                >
+                  {EXPENSE_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
               </div>
+
               <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px', color: '#334155' }}>Descrição do Compromisso</label>
-                <input type="text" required value={newPayable.description} onChange={(e) => setNewPayable({ ...newPayable, description: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px', color: '#334155' }}>
+                  Descrição
+                </label>
+                {EXPENSE_DESCRIPTIONS_MAP[newPayable.supplier_name]?.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <select
+                      value={
+                        EXPENSE_DESCRIPTIONS_MAP[newPayable.supplier_name].includes(newPayable.description)
+                          ? newPayable.description
+                          : '__CUSTOM__'
+                      }
+                      onChange={(e) => {
+                        if (e.target.value === '__CUSTOM__') {
+                          setNewPayable({ ...newPayable, description: '' });
+                        } else {
+                          setNewPayable({ ...newPayable, description: e.target.value });
+                        }
+                      }}
+                      style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.85rem', color: '#0f172a' }}
+                    >
+                      {EXPENSE_DESCRIPTIONS_MAP[newPayable.supplier_name].map(desc => (
+                        <option key={desc} value={desc}>{desc}</option>
+                      ))}
+                      <option value="__CUSTOM__">Outra descrição (digitar livremente)...</option>
+                    </select>
+
+                    {(!EXPENSE_DESCRIPTIONS_MAP[newPayable.supplier_name].includes(newPayable.description) || newPayable.description === '') && (
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="Digite a descrição da conta a pagar..." 
+                        value={newPayable.description} 
+                        onChange={(e) => setNewPayable({ ...newPayable, description: e.target.value })} 
+                        style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }} 
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="Digite a descrição da conta a pagar..." 
+                    value={newPayable.description} 
+                    onChange={(e) => setNewPayable({ ...newPayable, description: e.target.value })} 
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }} 
+                  />
+                )}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
                 <div>
@@ -711,10 +1004,50 @@ export default function DashboardExecutivo({ onNavigate }) {
                   <input type="number" step="0.01" required value={newPayable.amount} onChange={(e) => setNewPayable({ ...newPayable, amount: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                 </div>
               </div>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px', color: '#334155' }}>Data de Vencimento</label>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px', color: '#334155' }}>Data de Vencimento *</label>
                 <input type="date" required value={newPayable.due_date} onChange={(e) => setNewPayable({ ...newPayable, due_date: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
               </div>
+
+              {/* Seção Inteligente de Alertas de Vencimento */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: newPayable.alert_enabled ? '10px' : '0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={newPayable.alert_enabled} 
+                      onChange={(e) => setNewPayable({ ...newPayable, alert_enabled: e.target.checked })} 
+                      style={{ width: '16px', height: '16px', accentColor: '#2563eb', cursor: 'pointer' }}
+                    />
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Bell size={15} color={newPayable.alert_enabled ? '#2563eb' : '#94a3b8'} />
+                      Ativar Alerta Contínuo de Vencimento
+                    </span>
+                  </label>
+                </div>
+
+                {newPayable.alert_enabled && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', marginBottom: '4px' }}>
+                      Disparar notificação com antecedência de:
+                    </label>
+                    <select
+                      value={newPayable.alert_days_before}
+                      onChange={(e) => setNewPayable({ ...newPayable, alert_days_before: parseInt(e.target.value, 10) })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', background: '#fff' }}
+                    >
+                      <option value={0}>No próprio dia do vencimento (0 dias antes)</option>
+                      <option value={1}>1 dia antes do vencimento</option>
+                      <option value={3}>3 dias antes do vencimento (Padrão Recomendado)</option>
+                      <option value={7}>7 dias antes do vencimento (1 semana)</option>
+                    </select>
+                    <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                      💡 O alerta continuará sendo exibido até que você quite a conta ou clique em "Não alertar mais".
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setPayableModalOpen(false)} style={{ padding: '8px 16px', background: '#e2e8f0', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
                   Cancelar

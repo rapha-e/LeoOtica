@@ -65,3 +65,5 @@ uploads/*
 # === Scratch / Temp ===
 scratch/
 *.png
+*.pdf
+*.xlsx

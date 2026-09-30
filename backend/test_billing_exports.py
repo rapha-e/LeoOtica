@@ -30,7 +30,7 @@ class TestBillingExports(unittest.IsolatedAsyncioTestCase):
             # 1. Cadastra Ótica
             self.store = OpticalStore(
                 corporate_name="Optica Leo Exportacoes Ltda",
-                trade_name="Leo Otica Export",
+                trade_name="Nova Lab Export",
                 cnpj="12.345.678/0001-90",
                 email="financeiro@leoexport.com.br",
                 address="Av. Das Exportacoes, 123",

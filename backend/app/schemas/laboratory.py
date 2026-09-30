@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 class LaboratoryBase(BaseModel):
@@ -7,6 +8,7 @@ class LaboratoryBase(BaseModel):
     cep: str = Field(..., max_length=20, description="CEP")
     telephone: str = Field(..., max_length=50, description="Telefone comercial")
     cnpj: str = Field(..., max_length=25, description="CNPJ")
+    ie: Optional[str] = Field(None, max_length=30, description="Inscrição Estadual")
 
 class LaboratoryCreate(LaboratoryBase):
     pass
@@ -17,6 +19,7 @@ class LaboratoryUpdate(BaseModel):
     cep: str = Field(..., max_length=20)
     telephone: str = Field(..., max_length=50)
     cnpj: str = Field(..., max_length=25)
+    ie: Optional[str] = Field(None, max_length=30, description="Inscrição Estadual")
 
 class LaboratoryResponse(LaboratoryBase):
     id: uuid.UUID

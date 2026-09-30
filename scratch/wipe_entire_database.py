@@ -17,10 +17,10 @@ from backend.app.models.degree_policy import DegreePricingPolicy
 from backend.app.crud.crud_system_parameters import seed_default_parameters
 
 db_paths = [
-    os.path.join(project_root, "backend", "leootica.db"),
+    os.path.join(project_root, "backend", "Nova Lab.db"),
     os.path.join(project_root, "backend", "sql_app.db"),
     os.path.join(project_root, "backend", "app.db"),
-    os.path.join(project_root, "leootica.db")
+    os.path.join(project_root, "Nova Lab.db")
 ]
 
 async def wipe_database_file(db_file_path):
@@ -61,7 +61,7 @@ async def wipe_database_file(db_file_path):
 
         user_admin_email = User(
             name="Administrador do Sistema",
-            email="admin@leootica.com.br",
+            email="admin@Nova Lab.com.br",
             hashed_password=admin_hash,
             role_id=role_admin.id,
             is_active=True,

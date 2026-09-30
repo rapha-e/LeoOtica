@@ -2,7 +2,7 @@ import os
 import sys
 import sqlite3
 
-db_path = "backend/leootica.db"
+db_path = "backend/Nova Lab.db"
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 

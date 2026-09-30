@@ -153,7 +153,7 @@ export const printReportHtml = (title, contentHtml) => {
       </div>
       ${contentHtml}
       <div class="footer">
-        Documento emitido automaticamente pelo Sistema LeoÓtica 2.0 • Página 1 de 1
+        Documento emitido automaticamente pelo Sistema Nova Lab • Página 1 de 1
       </div>
       <script>
         window.onload = function() {

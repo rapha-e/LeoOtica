@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { 
   FileText, DollarSign, CheckCircle2, Calendar, Search, 
-  X, Printer, Eye, Check, ChevronRight, AlertCircle, RefreshCw, Landmark, BarChart2
+  X, Printer, Eye, Check, ChevronRight, AlertCircle, RefreshCw, Landmark, BarChart2,
+  Copy, CheckCheck, QrCode, Lock, RotateCcw, ShieldCheck, Download, AlertTriangle, ExternalLink
 } from 'lucide-react';
 import { BillingService } from '../services/api';
-const FechamentoFinanceiro = ({ laboratory }) => {
+import { generatePixPayload, generatePixQrCodeDataUrl } from '../utils/pixHelper';
+
+const FechamentoFinanceiro = ({ laboratory, currentUser }) => {
+  // Verificação de privilégio de Administrador
+  const isAdmin = currentUser?.role === 'Administrador' || currentUser?.role?.name === 'Administrador' || localStorage.getItem('factory_user_role') === 'Administrador';
+
   // Tabs: 'pendentes' | 'historico'
   const [activeTab, setActiveTab] = useState('pendentes');
 
-  
+  // Estados de Confirmação de Alteração de Status
+  const [statusConfirmModal, setStatusConfirmModal] = useState(null); // { cycle, targetStatus, title, message }
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
   // Estados de dados
   const [pendingGroups, setPendingGroups] = useState([]);
 
@@ -33,11 +42,14 @@ const FechamentoFinanceiro = ({ laboratory }) => {
   const [loadingKpis, setLoadingKpis] = useState(false);
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PAGO' | 'PENDENTE' | 'ATRASADO'
 
-  // Estados de Integração Fiscal (Sprint 12)
+  // Estados de Integração Fiscal (Sprint 12 / Focus NFe)
+  const [focusStatus, setFocusStatus] = useState(null);
   const [emittingNfe, setEmittingNfe] = useState(false);
+  const [syncingNfe, setSyncingNfe] = useState(false);
   const [cancellingNfe, setCancellingNfe] = useState(false);
   const [downloadingXml, setDownloadingXml] = useState(false);
   const [downloadingDanfe, setDownloadingDanfe] = useState(false);
+  const [copiedChave, setCopiedChave] = useState(false);
 
   // Estado de seleção de ótica para detalhamento
   const [selectedStore, setSelectedStore] = useState(null); // { id, name, pending_os_count, estimated_total_amount }
@@ -59,6 +71,50 @@ const FechamentoFinanceiro = ({ laboratory }) => {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [invoiceDetail, setInvoiceDetail] = useState(null);
   const [loadingInvoice, setLoadingInvoice] = useState(false);
+  const [pixQrCodeUrl, setPixQrCodeUrl] = useState('');
+  const [copiedPix, setCopiedPix] = useState(false);
+
+  // Geração reativa do QRCode do PIX com o Telefone do Nova Lab
+  useEffect(() => {
+    if (!invoiceDetail) {
+      setPixQrCodeUrl('');
+      return;
+    }
+    const pixPhone = '+5561992667281';
+    const labName = laboratory?.name || 'Nova LAB Ótica Industrial';
+
+    const payload = generatePixPayload({
+      pixKey: pixPhone,
+      merchantName: labName,
+      merchantCity: 'BRASILIA',
+      amount: invoiceDetail.total_amount || null,
+      txid: `FAT${(invoiceDetail.id || '').replace(/-/g, '').substring(0, 10).toUpperCase()}`,
+      description: `Fechamento #${(invoiceDetail.id || '').substring(0, 8)}`
+    });
+
+    generatePixQrCodeDataUrl(payload, { width: 140, margin: 1 }).then(url => {
+      setPixQrCodeUrl(url);
+    });
+  }, [invoiceDetail, laboratory]);
+
+  const handleCopyPix = () => {
+    const pixPhone = '+5561992667281';
+    const labName = laboratory?.name || 'Nova LAB Ótica Industrial';
+
+    const payload = generatePixPayload({
+      pixKey: pixPhone,
+      merchantName: labName,
+      merchantCity: 'BRASILIA',
+      amount: invoiceDetail?.total_amount || null,
+      txid: `FAT${(invoiceDetail?.id || '').replace(/-/g, '').substring(0, 10).toUpperCase()}`,
+      description: `Fechamento #${(invoiceDetail?.id || '').substring(0, 8)}`
+    });
+
+    navigator.clipboard.writeText(payload || '61992667281');
+    setCopiedPix(true);
+    showToast('Código PIX Copia e Cola copiado com sucesso!', 'success');
+    setTimeout(() => setCopiedPix(false), 3000);
+  };
 
   // Filtros rápidos de busca no histórico
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -117,8 +173,19 @@ const FechamentoFinanceiro = ({ laboratory }) => {
     }
   };
  
+  // Carregar status da integração Focus NFe
+  const loadFocusStatus = async () => {
+    try {
+      const response = await BillingService.getFocusNfeStatus();
+      setFocusStatus(response.data);
+    } catch (error) {
+      console.warn('Focus NFe status indisponível:', error);
+    }
+  };
+
   // Efeito inicial e de troca de aba
   useEffect(() => {
+    loadFocusStatus();
     if (activeTab === 'pendentes') {
       loadPendingGroups();
     } else {
@@ -204,41 +271,78 @@ const FechamentoFinanceiro = ({ laboratory }) => {
   };
 
 
-  // Liquidar/Quitar cobrança
-  const handlePayCycle = async (cycleId, e) => {
+  // Solicitar alteração de status (com validação de Administrador e abertura de modal de confirmação)
+  const handleRequestStatusChange = (cycle, targetStatus, e) => {
     if (e) e.stopPropagation();
     
+    if (!isAdmin) {
+      showToast('Apenas administradores podem alterar o status do faturamento.', 'error');
+      return;
+    }
+    
+    const isPaying = targetStatus === 'PAGO';
+    setStatusConfirmModal({
+      cycle,
+      targetStatus,
+      title: isPaying ? 'Confirmar Quitação de Cobrança' : 'Reverter Status para Pendente',
+      message: isPaying 
+        ? `Deseja confirmar a quitação do fechamento #${cycle.id.substring(0, 8).toUpperCase()} no valor de ${formatCurrency(cycle.total_amount)} da ótica ${cycle.optical_store_name || 'Ótica'}?`
+        : `Deseja reabrir este fechamento #${cycle.id.substring(0, 8).toUpperCase()} e reverter o status de PAGO para PENDENTE?`
+    });
+  };
+
+  // Executar a alteração de status após confirmação do Administrador
+  const handleExecuteStatusChange = async () => {
+    if (!statusConfirmModal || !statusConfirmModal.cycle) return;
+    const { cycle, targetStatus } = statusConfirmModal;
+
+    setUpdatingStatus(true);
     try {
-      const response = await BillingService.payCycle(cycleId);
-      showToast('Cobrança quitada com sucesso!', 'success');
+      const response = await BillingService.updateStatus(cycle.id, targetStatus);
+      showToast(
+        targetStatus === 'PAGO' 
+          ? 'Cobrança quitada com sucesso!' 
+          : 'Status revertido para Pendente com sucesso!', 
+        'success'
+      );
       
       // Se a fatura visualizada estiver aberta no modal, atualiza ela
-      if (invoiceDetail && invoiceDetail.id === cycleId) {
+      if (invoiceDetail && invoiceDetail.id === cycle.id) {
         setInvoiceDetail(response.data);
       }
       
-      // Recarrega listagem e KPIs se estiver na aba histórico
-      if (activeTab === 'historico') {
-        loadHistoryCycles();
-        loadKpis();
-      } else {
-        loadKpis();
-      }
+      // Recarrega listagem e KPIs
+      loadHistoryCycles();
+      loadKpis();
+      
+      setStatusConfirmModal(null);
     } catch (error) {
       console.error(error);
-      showToast('Erro ao liquidar cobrança.', 'error');
+      const detail = error.response?.data?.detail || 'Erro ao alterar status do fechamento.';
+      showToast(detail, 'error');
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
-  // Funções Fiscais da Sprint 12 (NF-e)
+  // Funções Fiscais da Integração Focus NFe (NF-e Modelo 55)
   const handleEmitNfe = async (cycleId) => {
     setEmittingNfe(true);
     try {
       const response = await BillingService.emitNfe(cycleId);
-      showToast('NF-e emitida e autorizada com sucesso!', 'success');
+      const nfeData = response.data;
+      if (nfeData.status === 'AUTORIZADA') {
+        showToast('NF-e emitida e AUTORIZADA pela SEFAZ!', 'success');
+      } else if (nfeData.status === 'PROCESSANDO') {
+        showToast('NF-e enviada! Processando autorização junto à SEFAZ.', 'info');
+      } else if (nfeData.status === 'REJEITADA') {
+        showToast(`NF-e rejeitada: ${nfeData.mensagem_sefaz || 'Erro de validação'}`, 'error');
+      } else {
+        showToast('NF-e emitida no modo de simulação local!', 'success');
+      }
       
       // Atualiza o detalhe do modal
-      setInvoiceDetail(prev => ({ ...prev, nfe_saida: response.data }));
+      setInvoiceDetail(prev => ({ ...prev, nfe_saida: nfeData }));
       
       // Recarrega listagem de ciclos se estiver no histórico
       if (activeTab === 'historico') {
@@ -253,16 +357,42 @@ const FechamentoFinanceiro = ({ laboratory }) => {
     }
   };
 
+  const handleSyncNfe = async (cycleId) => {
+    setSyncingNfe(true);
+    try {
+      const response = await BillingService.syncNfe(cycleId);
+      const nfeData = response.data;
+      showToast(`Status na SEFAZ: ${nfeData.status} - ${nfeData.mensagem_sefaz || 'Atualizado'}`, 'success');
+      
+      setInvoiceDetail(prev => ({ ...prev, nfe_saida: nfeData }));
+      if (activeTab === 'historico') {
+        loadHistoryCycles();
+      }
+    } catch (error) {
+      console.error(error);
+      const detail = error.response?.data?.detail || 'Erro ao sincronizar NF-e com SEFAZ.';
+      showToast(detail, 'error');
+    } finally {
+      setSyncingNfe(false);
+    }
+  };
+
   const handleCancelNfe = async (cycleId) => {
-    if (!window.confirm('Tem certeza de que deseja CANCELAR esta Nota Fiscal? Esta ação é irreversível.')) {
+    const justification = window.prompt(
+      'Informe a justificativa de cancelamento da NF-e (mínimo 15 caracteres):',
+      'Cancelamento homologado por solicitacao do cliente'
+    );
+    if (justification === null) return;
+    if (justification.trim().length < 15) {
+      showToast('A justificativa de cancelamento deve ter pelo menos 15 caracteres.', 'error');
       return;
     }
+
     setCancellingNfe(true);
     try {
-      const response = await BillingService.cancelNfe(cycleId);
+      const response = await BillingService.cancelNfe(cycleId, justification.trim());
       showToast('NF-e cancelada fiscalmente com sucesso!', 'success');
       
-      // Atualiza o detalhe do modal
       setInvoiceDetail(prev => ({ ...prev, nfe_saida: response.data }));
       
       if (activeTab === 'historico') {
@@ -275,6 +405,14 @@ const FechamentoFinanceiro = ({ laboratory }) => {
     } finally {
       setCancellingNfe(false);
     }
+  };
+
+  const handleCopyChave = (chave) => {
+    if (!chave) return;
+    navigator.clipboard.writeText(chave);
+    setCopiedChave(true);
+    showToast('Chave de acesso copiada para a área de transferência!', 'success');
+    setTimeout(() => setCopiedChave(false), 2500);
   };
 
   const handleDownloadXml = async (cycleId, nfeNumber) => {
@@ -482,9 +620,57 @@ const FechamentoFinanceiro = ({ laboratory }) => {
       {/* Header Premium */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '2rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <Landmark style={{ color: 'hsl(var(--primary))' }} size={32} /> Fechamento Financeiro
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: '2rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Landmark style={{ color: 'hsl(var(--primary))' }} size={32} /> Fechamento Financeiro
+            </h1>
+
+            {/* Badge Status da Integração Focus NFe */}
+            {focusStatus && (
+              <span 
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  background: focusStatus.status === 'online' 
+                    ? 'rgba(16, 185, 129, 0.12)' 
+                    : focusStatus.status === 'simulation_mode'
+                      ? 'rgba(59, 130, 246, 0.12)'
+                      : 'rgba(239, 68, 68, 0.12)',
+                  color: focusStatus.status === 'online'
+                    ? '#059669'
+                    : focusStatus.status === 'simulation_mode'
+                      ? '#2563eb'
+                      : '#dc2626',
+                  border: `1px solid ${
+                    focusStatus.status === 'online' 
+                      ? 'rgba(16, 185, 129, 0.3)' 
+                      : focusStatus.status === 'simulation_mode'
+                        ? 'rgba(59, 130, 246, 0.3)'
+                        : 'rgba(239, 68, 68, 0.3)'
+                  }`
+                }}
+                title={focusStatus.message}
+              >
+                <span style={{ 
+                  width: '8px', 
+                  height: '8px', 
+                  borderRadius: '50%', 
+                  background: focusStatus.status === 'online' ? '#10b981' : focusStatus.status === 'simulation_mode' ? '#3b82f6' : '#ef4444',
+                  display: 'inline-block'
+                }} />
+                {focusStatus.status === 'online'
+                  ? `Focus NFe (${focusStatus.environment?.toUpperCase()})`
+                  : focusStatus.status === 'simulation_mode'
+                    ? 'Modo Simulação Local (NF-e)'
+                    : 'Focus NFe Offline'}
+              </span>
+            )}
+          </div>
           <p style={{ margin: '5px 0 0 0', color: 'hsl(var(--text-secondary))' }}>
             Consolide ordens de serviço faturadas, emita relatórios de faturamento e registre a quitação de óticas parceiras.
           </p>
@@ -781,6 +967,7 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                         <th>Vencimento</th>
                         <th>Valor Total</th>
                         <th>Status</th>
+                        <th>NF-e SEFAZ</th>
                         <th style={{ width: '130px' }}>Ações</th>
                       </tr>
                     </thead>
@@ -832,7 +1019,48 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                             </span>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            {cycle.nfe_saida ? (
+                              <span 
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  background: cycle.nfe_saida.status === 'AUTORIZADA' 
+                                    ? 'rgba(16, 185, 129, 0.15)' 
+                                    : cycle.nfe_saida.status === 'PROCESSANDO'
+                                      ? 'rgba(245, 158, 11, 0.15)'
+                                      : cycle.nfe_saida.status === 'REJEITADA'
+                                        ? 'rgba(239, 68, 68, 0.15)'
+                                        : cycle.nfe_saida.status === 'CANCELADA'
+                                          ? 'rgba(100, 116, 139, 0.15)'
+                                          : 'rgba(59, 130, 246, 0.15)',
+                                  color: cycle.nfe_saida.status === 'AUTORIZADA' 
+                                    ? '#059669' 
+                                    : cycle.nfe_saida.status === 'PROCESSANDO'
+                                      ? '#d97706'
+                                      : cycle.nfe_saida.status === 'REJEITADA'
+                                        ? '#dc2626'
+                                        : cycle.nfe_saida.status === 'CANCELADA'
+                                          ? '#64748b'
+                                          : '#2563eb'
+                                }}
+                                title={cycle.nfe_saida.mensagem_sefaz || `NF-e ${cycle.nfe_saida.status}`}
+                              >
+                                <ShieldCheck size={12} />
+                                #{cycle.nfe_saida.nfe_number} ({cycle.nfe_saida.status})
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))' }}>
+                                Não emitida
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
                               <button 
                                 className="btn btn-secondary" 
                                 style={{ padding: '6px 10px', borderRadius: '6px' }}
@@ -842,15 +1070,40 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                                 <Eye size={14} />
                               </button>
                               
-                              {cycle.status === 'FECHADO' && (
+                              {cycle.status === 'FECHADO' ? (
                                 <button 
                                   className="btn btn-accent" 
-                                  style={{ padding: '6px 10px', borderRadius: '6px', background: 'hsl(var(--success))' }}
-                                  onClick={(e) => handlePayCycle(cycle.id, e)}
-                                  title="Liquidar/Marcar como Pago"
+                                  style={{ 
+                                    padding: '6px 10px', 
+                                    borderRadius: '6px', 
+                                    background: isAdmin ? 'hsl(var(--success))' : '#94a3b8',
+                                    cursor: isAdmin ? 'pointer' : 'not-allowed',
+                                    opacity: isAdmin ? 1 : 0.6
+                                  }}
+                                  onClick={(e) => handleRequestStatusChange(cycle, 'PAGO', e)}
+                                  title={isAdmin ? "Liquidar / Marcar como Pago (Requer Confirmação)" : "Apenas Administrador pode liquidar fatura"}
+                                  disabled={!isAdmin}
                                 >
                                   <Check size={14} style={{ color: 'white' }} />
                                 </button>
+                              ) : (
+                                isAdmin && (
+                                  <button 
+                                    className="btn btn-secondary" 
+                                    style={{ 
+                                      padding: '6px 10px', 
+                                      borderRadius: '6px',
+                                      color: '#d97706',
+                                      borderColor: 'rgba(217, 119, 6, 0.3)',
+                                      background: 'rgba(217, 119, 6, 0.08)',
+                                      cursor: 'pointer'
+                                    }}
+                                    onClick={(e) => handleRequestStatusChange(cycle, 'FECHADO', e)}
+                                    title="Reverter Status para Pendente (Administrador - Requer Confirmação)"
+                                  >
+                                    <RotateCcw size={14} />
+                                  </button>
+                                )
                               )}
                             </div>
                           </td>
@@ -1161,7 +1414,7 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                       {laboratory?.address || "Av. Principal de Ópticas, 1000 - Centro"} - CEP {laboratory?.cep || "01234-567"}
                     </p>
                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>
-                      CNPJ: {laboratory?.cnpj || "00.123.456/0001-99"} | Tel: {laboratory?.telephone || "(11) 5555-1234"}
+                      CNPJ: {laboratory?.cnpj || "58.032.958/0001-44"} | Tel: {laboratory?.telephone || "(61) 99266-7281"}
                     </p>
                   </div>
 
@@ -1215,6 +1468,268 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                       <p style={{ margin: '2px 0 0 0', fontSize: '0.85rem', color: 'hsl(var(--success))' }}>
                         <strong>Liquidação:</strong> {formatDateTime(invoiceDetail.paid_at)}
                       </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Painel de Integração Fiscal NF-e SEFAZ (Focus NFe) */}
+                <div style={{
+                  marginBottom: '24px',
+                  background: 'white',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(224, 230, 240, 0.9)',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                  overflow: 'hidden'
+                }}>
+                  {/* Cabeçalho do Card Fiscal */}
+                  <div style={{
+                    padding: '12px 18px',
+                    background: 'rgba(15, 23, 42, 0.03)',
+                    borderBottom: '1px solid rgba(224, 230, 240, 0.8)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <ShieldCheck size={20} style={{ color: 'hsl(var(--primary))' }} />
+                      <strong style={{ fontSize: '0.95rem', color: 'hsl(var(--text-primary))' }}>
+                        Nota Fiscal Eletrônica (NF-e Modelo 55)
+                      </strong>
+                    </div>
+
+                    {invoiceDetail.nfe_saida ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          borderRadius: '20px',
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          background: invoiceDetail.nfe_saida.status === 'AUTORIZADA'
+                            ? 'rgba(16, 185, 129, 0.15)'
+                            : invoiceDetail.nfe_saida.status === 'PROCESSANDO'
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : invoiceDetail.nfe_saida.status === 'REJEITADA'
+                                ? 'rgba(239, 68, 68, 0.15)'
+                                : invoiceDetail.nfe_saida.status === 'CANCELADA'
+                                  ? 'rgba(100, 116, 139, 0.15)'
+                                  : 'rgba(59, 130, 246, 0.15)',
+                          color: invoiceDetail.nfe_saida.status === 'AUTORIZADA'
+                            ? '#059669'
+                            : invoiceDetail.nfe_saida.status === 'PROCESSANDO'
+                              ? '#d97706'
+                              : invoiceDetail.nfe_saida.status === 'REJEITADA'
+                                ? '#dc2626'
+                                : invoiceDetail.nfe_saida.status === 'CANCELADA'
+                                  ? '#64748b'
+                                  : '#2563eb'
+                        }}>
+                          {invoiceDetail.nfe_saida.status === 'PROCESSANDO' && (
+                            <RefreshCw size={12} className="spin" />
+                          )}
+                          SEFAZ: {invoiceDetail.nfe_saida.status}
+                        </span>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>
+                        Não emitida
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Corpo do Card Fiscal */}
+                  <div style={{ padding: '16px 18px' }}>
+                    {invoiceDetail.nfe_saida ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+                          <div>
+                            <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>Número & Série</span>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'hsl(var(--text-primary))' }}>
+                              #{String(invoiceDetail.nfe_saida.nfe_number).padStart(6, '0')} (Série {invoiceDetail.nfe_saida.serie})
+                            </div>
+                          </div>
+
+                          <div>
+                            <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>Protocolo SEFAZ</span>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'hsl(var(--text-secondary))' }}>
+                              {invoiceDetail.nfe_saida.protocolo || 'Aguardando autorização'}
+                            </div>
+                          </div>
+
+                          <div>
+                            <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'hsl(var(--text-muted))' }}>Emissão</span>
+                            <div style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>
+                              {formatDateTime(invoiceDetail.nfe_saida.emitted_at)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Chave de Acesso */}
+                        {invoiceDetail.nfe_saida.chave_acesso && (
+                          <div style={{
+                            background: '#f1f5f9',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '8px'
+                          }}>
+                            <div>
+                              <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: '#64748b', display: 'block' }}>Chave de Acesso SEFAZ (44 dígitos)</span>
+                              <code style={{ fontSize: '0.8rem', letterSpacing: '0.5px', color: '#0f172a', wordBreak: 'break-all' }}>
+                                {invoiceDetail.nfe_saida.chave_acesso}
+                              </code>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopyChave(invoiceDetail.nfe_saida.chave_acesso)}
+                              className="no-print"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '4px 10px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                background: 'white',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                color: '#334155'
+                              }}
+                            >
+                              {copiedChave ? <CheckCheck size={14} color="#10b981" /> : <Copy size={14} />}
+                              {copiedChave ? 'Copiada!' : 'Copiar Chave'}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Mensagem SEFAZ */}
+                        {invoiceDetail.nfe_saida.mensagem_sefaz && (
+                          <div style={{
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '8px',
+                            background: invoiceDetail.nfe_saida.status === 'REJEITADA'
+                              ? 'rgba(239, 68, 68, 0.08)'
+                              : 'rgba(15, 23, 42, 0.03)',
+                            color: invoiceDetail.nfe_saida.status === 'REJEITADA' ? '#dc2626' : '#475569',
+                            borderLeft: `3px solid ${
+                              invoiceDetail.nfe_saida.status === 'REJEITADA'
+                                ? '#ef4444'
+                                : invoiceDetail.nfe_saida.status === 'AUTORIZADA'
+                                  ? '#10b981'
+                                  : 'hsl(var(--primary))'
+                            }`
+                          }}>
+                            <AlertCircle size={15} style={{ flexShrink: 0, marginTop: '2px' }} />
+                            <span><strong>Retorno SEFAZ:</strong> {invoiceDetail.nfe_saida.mensagem_sefaz}</span>
+                          </div>
+                        )}
+
+                        {/* Barra de Ações da NF-e */}
+                        <div className="no-print" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', paddingTop: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleSyncNfe(invoiceDetail.id)}
+                            disabled={syncingNfe}
+                            className="btn btn-secondary"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 14px' }}
+                            title="Consulta o status atualizado na SEFAZ"
+                          >
+                            <RefreshCw size={14} className={syncingNfe ? 'spin' : ''} />
+                            {syncingNfe ? 'Sincronizando...' : 'Sincronizar SEFAZ'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadDanfe(invoiceDetail.id, invoiceDetail.nfe_saida.nfe_number)}
+                            disabled={downloadingDanfe}
+                            className="btn btn-secondary"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 14px' }}
+                          >
+                            <Download size={14} />
+                            {downloadingDanfe ? 'Baixando...' : 'DANFE (PDF)'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadXml(invoiceDetail.id, invoiceDetail.nfe_saida.nfe_number)}
+                            disabled={downloadingXml}
+                            className="btn btn-secondary"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 14px' }}
+                          >
+                            <Download size={14} />
+                            {downloadingXml ? 'Baixando...' : 'XML da Nota'}
+                          </button>
+
+                          {invoiceDetail.nfe_saida.status !== 'CANCELADA' && (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelNfe(invoiceDetail.id)}
+                              disabled={cancellingNfe}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontSize: '0.8rem',
+                                padding: '6px 14px',
+                                borderRadius: '6px',
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                background: 'rgba(239, 68, 68, 0.06)',
+                                color: '#dc2626',
+                                cursor: 'pointer',
+                                marginLeft: 'auto'
+                              }}
+                            >
+                              <X size={14} />
+                              {cancellingNfe ? 'Cancelando...' : 'Cancelar NF-e'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '14px',
+                        padding: '6px 0'
+                      }}>
+                        <div>
+                          <p style={{ margin: 0, fontSize: '0.88rem', color: '#334155' }}>
+                            Nota fiscal ainda não emitida para este fechamento.
+                          </p>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            {focusStatus?.status === 'online'
+                              ? `A emissão será transmitida diretamente para a SEFAZ via Focus NFe (${focusStatus.environment.toUpperCase()}).`
+                              : 'A emissão será gerada em modo de simulação local.'}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleEmitNfe(invoiceDetail.id)}
+                          disabled={emittingNfe}
+                          className="btn btn-primary no-print"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 18px', fontSize: '0.85rem', fontWeight: 700 }}
+                        >
+                          <ShieldCheck size={16} />
+                          {emittingNfe ? 'Emitindo junto à SEFAZ...' : 'Emitir NF-e Fiscal (SEFAZ)'}
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1295,7 +1810,7 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                                       {detail.name}
                                     </td>
                                     <td style={{ padding: '8px 16px', color: 'hsl(var(--text-secondary))' }}>
-                                      {detail.description || '-'}
+                                      {isLens ? 'Lente Oftálmica' : (detail.description || '-')}
                                     </td>
                                     <td style={{ padding: '8px 16px', textAlign: 'center' }}>
                                       <span style={{ 
@@ -1324,7 +1839,7 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                               <>
                                 <tr style={{ borderBottom: '1px solid rgba(224,230,240,0.4)' }}>
                                   <td style={{ padding: '8px 16px', fontWeight: 600 }}>{item.lens_type || 'Lente Padrão Laboratorial'}</td>
-                                  <td style={{ padding: '8px 16px', color: 'hsl(var(--text-secondary))' }}>Lente Oftálmica Visão Simples / Digital</td>
+                                  <td style={{ padding: '8px 16px', color: 'hsl(var(--text-secondary))' }}>Lente Oftálmica</td>
                                   <td style={{ padding: '8px 16px', textAlign: 'center' }}>
                                     <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: 'rgba(147, 51, 234, 0.1)', color: '#7e22ce' }}>Lente</span>
                                   </td>
@@ -1363,9 +1878,77 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                 </div>
 
 
-                {/* Resumo Financeiro */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '2px solid rgba(224,230,240,0.8)', paddingTop: '16px' }}>
-                  <div style={{ width: '300px', textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* Resumo Financeiro e Bloco de Pagamento PIX */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: '2px solid rgba(224,230,240,0.8)', paddingTop: '16px', gap: '20px', flexWrap: 'wrap' }}>
+                  
+                  {/* Bloco Discreto de Pagamento PIX com CNPJ do Nova Lab */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    maxWidth: '430px',
+                    flex: '1 1 320px'
+                  }}>
+                    {pixQrCodeUrl ? (
+                      <img 
+                        src={pixQrCodeUrl} 
+                        alt="QR Code Pix" 
+                        style={{ width: '84px', height: '84px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#ffffff', padding: '2px', flexShrink: 0 }} 
+                      />
+                    ) : (
+                      <div style={{ width: '84px', height: '84px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', borderRadius: '4px', flexShrink: 0 }}>
+                        <QrCode size={36} color="#64748b" />
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.78rem', color: '#334155' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.82rem', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
+                          PAGAMENTO VIA PIX
+                        </span>
+                      </div>
+                      <div style={{ marginTop: '2px' }}>
+                        <span style={{ color: '#64748b' }}>Chave Telefone:</span> <strong style={{ fontFamily: 'monospace', color: '#0f172a', fontSize: '0.82rem' }}>(61) 99266-7281</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b' }}>Favorecido:</span> <strong style={{ color: '#0f172a' }}>{laboratory?.name || 'Nova LAB Ótica Industrial'}</strong>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '1px' }}>
+                        Escaneie no app do seu banco ou pague via Chave Telefone
+                      </div>
+
+                      {/* Botão Copiar Chave / Copia e Cola (Apenas na tela) */}
+                      <div className="no-print" style={{ marginTop: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={handleCopyPix}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid hsl(var(--primary) / 0.3)',
+                            background: 'hsl(var(--primary) / 0.08)',
+                            color: 'hsl(var(--primary))',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {copiedPix ? <CheckCheck size={12} /> : <Copy size={12} />}
+                          {copiedPix ? 'Chave Copiada!' : 'Copiar PIX Copia e Cola'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Totais do Fechamento */}
+                  <div style={{ width: '260px', textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem' }}>
                       <span style={{ color: 'hsl(var(--text-secondary))' }}>Subtotal:</span>
                       <strong>{formatCurrency(invoiceDetail.total_amount)}</strong>
@@ -1381,8 +1964,32 @@ const FechamentoFinanceiro = ({ laboratory }) => {
                   </div>
                 </div>
 
-                {/* Botão de Impressão (Visível na tela, Oculto na Impressão) */}
-                <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(224,230,240,0.8)' }}>
+                {/* Botões do Rodapé da Fatura (Visíveis na tela, Ocultos na Impressão) */}
+                <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(224,230,240,0.8)' }}>
+                  <div>
+                    {isAdmin ? (
+                      invoiceDetail.status === 'FECHADO' ? (
+                        <button
+                          type="button"
+                          className="btn btn-accent no-print"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', fontWeight: 700, borderRadius: '8px', background: 'hsl(var(--success))' }}
+                          onClick={(e) => handleRequestStatusChange(invoiceDetail, 'PAGO', e)}
+                        >
+                          <Check size={16} /> Quitar / Marcar como Pago
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-secondary no-print"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', fontWeight: 700, borderRadius: '8px', color: '#d97706', borderColor: 'rgba(217, 119, 6, 0.3)' }}
+                          onClick={(e) => handleRequestStatusChange(invoiceDetail, 'FECHADO', e)}
+                        >
+                          <RotateCcw size={16} /> Reverter para Pendente
+                        </button>
+                      )
+                    ) : null}
+                  </div>
+
                   <button 
                     type="button"
                     className="btn btn-primary no-print" 
@@ -1395,6 +2002,118 @@ const FechamentoFinanceiro = ({ laboratory }) => {
 
               </div>
             ) : null}
+
+          </div>
+        </div>
+      )}
+
+
+      {/* MODAL DE CONFIRMAÇÃO DE ALTERAÇÃO DE STATUS (RESTRITO A ADMINISTRADORES) */}
+      {statusConfirmModal && (
+        <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="modal-container" style={{ maxWidth: '480px', width: '90%', padding: '28px', background: 'white', borderRadius: '16px', boxShadow: '0 20px 50px rgba(0,0,0,0.2)', textAlign: 'center', animation: 'modal-appear 0.2s ease-out' }}>
+            
+            <div style={{
+              padding: '16px',
+              borderRadius: '50%',
+              background: statusConfirmModal.targetStatus === 'PAGO' ? 'hsl(var(--success) / 0.12)' : 'rgba(217, 119, 6, 0.12)',
+              color: statusConfirmModal.targetStatus === 'PAGO' ? 'hsl(var(--success))' : '#d97706',
+              width: 'fit-content',
+              margin: '0 auto 16px'
+            }}>
+              {statusConfirmModal.targetStatus === 'PAGO' ? <CheckCircle2 size={36} /> : <AlertCircle size={36} />}
+            </div>
+
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.25rem', color: 'hsl(var(--text-primary))' }}>
+              {statusConfirmModal.title}
+            </h3>
+            
+            <p style={{ fontSize: '0.9rem', color: 'hsl(var(--text-secondary))', lineHeight: 1.5, marginBottom: '20px' }}>
+              {statusConfirmModal.message}
+            </p>
+
+            {/* Card de Resumo do Fechamento */}
+            <div style={{
+              background: 'rgba(15, 23, 42, 0.03)',
+              borderRadius: '12px',
+              padding: '16px',
+              border: '1px solid rgba(224, 230, 240, 0.8)',
+              marginBottom: '20px',
+              textAlign: 'left',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              fontSize: '0.85rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'hsl(var(--text-muted))' }}>Fechamento:</span>
+                <strong style={{ fontFamily: 'monospace' }}>#{statusConfirmModal.cycle.id.substring(0, 8).toUpperCase()}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'hsl(var(--text-muted))' }}>Ótica:</span>
+                <strong>{statusConfirmModal.cycle.optical_store_name || 'Ótica'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'hsl(var(--text-muted))' }}>Valor Total:</span>
+                <strong style={{ color: 'hsl(var(--primary))', fontSize: '1.05rem' }}>{formatCurrency(statusConfirmModal.cycle.total_amount)}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(224,230,240,0.6)', paddingTop: '8px', marginTop: '4px' }}>
+                <span style={{ color: 'hsl(var(--text-muted))' }}>Transição de Status:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+                  <span style={{ 
+                    padding: '2px 8px', 
+                    borderRadius: '4px', 
+                    fontSize: '0.75rem',
+                    background: statusConfirmModal.cycle.status === 'PAGO' ? 'hsl(var(--success) / 0.12)' : 'hsl(var(--warning) / 0.12)',
+                    color: statusConfirmModal.cycle.status === 'PAGO' ? 'hsl(var(--success))' : 'hsl(var(--warning))'
+                  }}>
+                    {statusConfirmModal.cycle.status === 'PAGO' ? 'Pago' : 'Pendente'}
+                  </span>
+                  <span>➔</span>
+                  <span style={{ 
+                    padding: '2px 8px', 
+                    borderRadius: '4px', 
+                    fontSize: '0.75rem',
+                    background: statusConfirmModal.targetStatus === 'PAGO' ? 'hsl(var(--success) / 0.12)' : 'hsl(var(--warning) / 0.12)',
+                    color: statusConfirmModal.targetStatus === 'PAGO' ? 'hsl(var(--success))' : 'hsl(var(--warning))'
+                  }}>
+                    {statusConfirmModal.targetStatus === 'PAGO' ? 'Pago' : 'Pendente'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ flex: 1, padding: '10px 16px' }}
+                onClick={() => setStatusConfirmModal(null)}
+                disabled={updatingStatus}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  background: statusConfirmModal.targetStatus === 'PAGO' ? 'hsl(var(--success))' : 'hsl(var(--primary))',
+                  borderColor: statusConfirmModal.targetStatus === 'PAGO' ? 'hsl(var(--success))' : 'hsl(var(--primary))'
+                }}
+                onClick={handleExecuteStatusChange}
+                disabled={updatingStatus}
+              >
+                {updatingStatus ? (
+                  <RefreshCw size={16} className="spin" />
+                ) : (
+                  <>
+                    <Check size={16} /> Confirmar Ação
+                  </>
+                )}
+              </button>
+            </div>
 
           </div>
         </div>

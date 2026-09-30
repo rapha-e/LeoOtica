@@ -34,7 +34,7 @@ class TestCQWorkflowAndInspections(unittest.IsolatedAsyncioTestCase):
             await session.flush()
 
             self.operator = User(
-                email="operator_cq@leootica.com.br",
+                email="operator_cq@Nova Lab.com.br",
                 hashed_password="hashed_password",
                 name="Inspetor Qualidade",
                 role=role_operador,

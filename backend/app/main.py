@@ -121,7 +121,17 @@ async def startup_event():
                 "ALTER TABLE products ADD COLUMN base_curve NUMERIC(4, 2);",
                 "ALTER TABLE products ADD COLUMN addition NUMERIC(4, 2);",
                 "ALTER TABLE products ADD COLUMN spherical NUMERIC(4, 2);",
-                "ALTER TABLE products ADD COLUMN cylindrical NUMERIC(4, 2);"
+                "ALTER TABLE products ADD COLUMN cylindrical NUMERIC(4, 2);",
+                "ALTER TABLE accounts_payable ADD COLUMN alert_enabled BOOLEAN DEFAULT 1;",
+                "ALTER TABLE accounts_payable ADD COLUMN alert_dismissed BOOLEAN DEFAULT 0;",
+                "ALTER TABLE accounts_payable ADD COLUMN alert_days_before INTEGER DEFAULT 3;",
+                "ALTER TABLE accounts_payable ADD COLUMN dismissed_at DATETIME;",
+                "ALTER TABLE nfe_saida ADD COLUMN focus_ref VARCHAR(100);",
+                "ALTER TABLE nfe_saida ADD COLUMN protocolo VARCHAR(50);",
+                "ALTER TABLE nfe_saida ADD COLUMN danfe_url VARCHAR(500);",
+                "ALTER TABLE nfe_saida ADD COLUMN xml_url VARCHAR(500);",
+                "ALTER TABLE nfe_saida ADD COLUMN mensagem_sefaz TEXT;",
+                "ALTER TABLE laboratory_profile ADD COLUMN ie VARCHAR(30);"
             ]:
                 try:
                     await conn.execute(text(col_sql))
@@ -421,6 +431,7 @@ async def startup_event():
                 has_product_item = any(item.entity_type == "product" for item in os_obj.items)
                 if not has_product_item:
                     print(f"[INFO] Corrigindo faturamento retroativo da OS {os_obj.os_number}...")
+                    from backend.app.models.financial_catalog import Product
                     
                     # Função de correspondência de produto comercial
                     async def find_matching_product(lens_model):

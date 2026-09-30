@@ -82,6 +82,34 @@ async def pay_payable_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Valor de pagamento inválido.")
     return await crud_financial_corp.pay_account_payable(db, payable_id, amount)
 
+@router.post("/payables/{payable_id}/dismiss-alert")
+async def dismiss_payable_alert_endpoint(
+    payable_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_operator),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Dispensa o alerta de vencimento para uma conta a pagar (o operador opta por não alertar mais).
+    """
+    try:
+        return await crud_financial_corp.dismiss_payable_alert(db, payable_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+@router.post("/payables/{payable_id}/reactivate-alert")
+async def reactivate_payable_alert_endpoint(
+    payable_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_operator),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reativa o alerta de vencimento para uma conta a pagar previamente silenciada.
+    """
+    try:
+        return await crud_financial_corp.reactivate_payable_alert(db, payable_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
 @router.get("/cash-flow")
 async def get_cash_flow_endpoint(
     timeframe: str = Query("monthly"),
@@ -124,18 +152,24 @@ async def get_overdue_alerts_endpoint(
     current_user: User = Depends(get_current_active_operator),
     db: AsyncSession = Depends(get_db)
 ):
-
     """
-    Central de Alertas Financeiros acionada pós-login do Administrador.
+    Central de Alertas Financeiros consolidada (Recebíveis vencidos + Contas a Pagar com alerta ativo).
     """
     await crud_financial_corp.sync_billing_cycles_to_receivables(db)
     receivables = await crud_financial_corp.get_accounts_receivable(db)
+    payables = await crud_financial_corp.get_accounts_payable(db)
     
     overdue_items = [r for r in receivables if r["days_overdue"] > 0 or r["status"] == "ATRASADO"]
     due_today_items = [r for r in receivables if r["days_overdue"] == 0 and r["status"] in ["PENDENTE", "RECEBIDO_PARCIAL"]]
     due_in_7_days = [r for r in receivables if 0 <= r["days_overdue"] >= -7 and r["status"] in ["PENDENTE", "RECEBIDO_PARCIAL"]]
     
     delinquent_stores = set(r["optical_store_name"] for r in overdue_items)
+
+    # Alertas ativos de Contas a Pagar (não dispensados pelo operador)
+    payable_alerts = [p for p in payables if p.get("is_alert_active")]
+    payable_overdue = [p for p in payable_alerts if p.get("days_overdue", 0) > 0]
+    payable_due_today = [p for p in payable_alerts if p.get("days_until_due") == 0]
+    payable_due_soon = [p for p in payable_alerts if p.get("days_until_due", 0) > 0]
     
     return {
         "overdue_count": len(overdue_items),
@@ -143,7 +177,14 @@ async def get_overdue_alerts_endpoint(
         "delinquent_stores_count": len(delinquent_stores),
         "due_today_count": len(due_today_items),
         "due_in_7_days_count": len(due_in_7_days),
-        "overdue_items": overdue_items[:10]
+        "overdue_items": overdue_items[:10],
+        # Contas a Pagar
+        "payable_alerts_count": len(payable_alerts),
+        "payable_overdue_count": len(payable_overdue),
+        "payable_due_today_count": len(payable_due_today),
+        "payable_due_soon_count": len(payable_due_soon),
+        "payable_total_alert_amount": float(sum(p["balance_due"] for p in payable_alerts)),
+        "payable_alerts": payable_alerts
     }
 
 @router.get("/dre")

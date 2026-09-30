@@ -10,8 +10,8 @@ if not os.path.exists(os.path.dirname(BACKUP_DIR)):
 def get_db_path():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     candidates = [
-        os.path.join(base_dir, "backend", "leootica.db"),
-        os.path.join(base_dir, "leootica.db"),
+        os.path.join(base_dir, "backend", "Nova Lab.db"),
+        os.path.join(base_dir, "Nova Lab.db"),
         os.path.join(base_dir, "backend", "novalab.db"),
         os.path.join(base_dir, "novalab.db"),
     ]

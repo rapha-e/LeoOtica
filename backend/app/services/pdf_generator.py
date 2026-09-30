@@ -1,4 +1,5 @@
 import io
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, List
@@ -7,6 +8,8 @@ from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.pdfgen import canvas
 
 class NumberedCanvas(canvas.Canvas):
@@ -38,7 +41,7 @@ class NumberedCanvas(canvas.Canvas):
         
         # Textos de rodapé
         now_str = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
-        self.drawString(40, 22, f"LeoÓtica 2.0 Enterprise — Emitido em: {now_str}")
+        self.drawString(40, 22, f"Nova Lab Enterprise — Emitido em: {now_str}")
         self.drawRightString(555, 22, f"Página {self._pageNumber} de {page_count}")
         self.restoreState()
 
@@ -47,6 +50,8 @@ def _create_header(title: str, subtitle: str, lab_info: Dict[str, Any] = None) -
     styles = getSampleStyleSheet()
     lab_name = lab_info.get("name", "Nova LAB Ótica Industrial") if lab_info else "Nova LAB Ótica Industrial"
     lab_cnpj = lab_info.get("cnpj", "58.032.958/0001-44") if lab_info else "58.032.958/0001-44"
+    lab_ie = lab_info.get("ie") if lab_info else None
+    ie_str = f" | IE: {lab_ie}" if lab_ie else ""
 
     header_title_style = ParagraphStyle(
         'HeaderTitle',
@@ -83,7 +88,7 @@ def _create_header(title: str, subtitle: str, lab_info: Dict[str, Any] = None) -
 
     left_cell = [
         Paragraph(f"<b>{lab_name}</b>", header_title_style),
-        Paragraph(f"CNPJ: {lab_cnpj} | Sistema MES/ERP", header_subtitle_style)
+        Paragraph(f"CNPJ: {lab_cnpj}{ie_str} | Sistema MES/ERP", header_subtitle_style)
     ]
     right_cell = [
         Paragraph(title.upper(), report_name_style),
@@ -568,28 +573,115 @@ def generate_billing_pdf(cycle: Any, laboratory: Any = None) -> bytes:
     story.append(table)
     story.append(Spacer(1, 10))
 
-    # Totais Finais
+    # Totais Finais e Bloco de Pagamento PIX
     subtotal = Decimal(str(getattr(cycle, "total_amount", 0.0) or 0.0))
     discount = Decimal(str(getattr(cycle, "discount_amount", 0.0) or 0.0))
     final_amt = Decimal(str(getattr(cycle, "final_amount", 0.0) or (subtotal - discount)))
 
-    totals_data = [
-        [Paragraph("<b>Subtotal Bruto:</b>", styles['Normal']), f"R$ {subtotal:.2f}"],
-        [Paragraph("<b>Desconto Aplicado:</b>", styles['Normal']), f"- R$ {discount:.2f}"],
-        [Paragraph("<b>VALOR TOTAL LÍQUIDO A PAGAR:</b>", styles['Normal']), f"<b>R$ {final_amt:.2f}</b>"]
+    # Geração do Payload PIX Estático (Padrão BACEN / EMVCo)
+    lab_cnpj_clean = re.sub(r"\D", "", lab_info.get("cnpj", "58032958000144")) or "58032958000144"
+    lab_name_clean = re.sub(r"[^A-Z0-9 ]", "", (lab_info.get("name", "NOVA LAB OTICA") or "NOVA LAB").upper())[:25]
+    
+    def _calc_crc16(payload_str: str) -> str:
+        crc = 0xFFFF
+        for char in payload_str:
+            crc ^= (ord(char) << 8)
+            for _ in range(8):
+                if crc & 0x8000:
+                    crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+                else:
+                    crc = (crc << 1) & 0xFFFF
+        return f"{crc:04X}"
+
+    def _fmt_tlv(tag: str, val: str) -> str:
+        if not val:
+            return ""
+        return f"{tag}{len(val):02d}{val}"
+
+    # Monta payload BRCode PIX (Chave de Telefone +5561992667281)
+    pix_phone_key = "+5561992667281"
+    pix_payload_raw = _fmt_tlv("00", "01")
+    pix_payload_raw += _fmt_tlv("26", _fmt_tlv("00", "br.gov.bcb.pix") + _fmt_tlv("01", pix_phone_key))
+    pix_payload_raw += _fmt_tlv("52", "0000")
+    pix_payload_raw += _fmt_tlv("53", "986")
+    if final_amt > 0:
+        pix_payload_raw += _fmt_tlv("54", f"{final_amt:.2f}")
+    pix_payload_raw += _fmt_tlv("58", "BR")
+    pix_payload_raw += _fmt_tlv("59", lab_name_clean or "NOVA LAB")
+    pix_payload_raw += _fmt_tlv("60", "BRASILIA")
+    cycle_txid = re.sub(r"[^a-zA-Z0-9]", "", str(cycle.id))[:10].upper()
+    pix_payload_raw += _fmt_tlv("62", _fmt_tlv("05", f"FAT{cycle_txid}"))
+    pix_payload_raw += "6304"
+    pix_payload_raw += _calc_crc16(pix_payload_raw)
+
+    # QR Code Widget discreto (58x58 pt)
+    qr_widget = QrCodeWidget(pix_payload_raw)
+    qr_widget.barWidth = 58
+    qr_widget.barHeight = 58
+    qr_widget.qrVersion = 1
+
+    d_qr = Drawing(58, 58)
+    d_qr.add(qr_widget)
+
+    pix_text_style = ParagraphStyle(
+        'PixText',
+        parent=styles['Normal'],
+        fontSize=7.5,
+        leading=10,
+        textColor=colors.HexColor("#334155")
+    )
+    pix_title_style = ParagraphStyle(
+        'PixTitle',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=11,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor("#0f172a")
+    )
+
+    pix_info_cell = [
+        Paragraph("<b>PAGAMENTO VIA PIX</b>", pix_title_style),
+        Spacer(1, 2),
+        Paragraph("<b>Chave Telefone:</b> <font name='Courier'>(61) 99266-7281</font>", pix_text_style),
+        Paragraph(f"<b>Favorecido:</b> {lab_info.get('name', 'Nova LAB Ótica Industrial')}", pix_text_style),
+        Paragraph("<font color='#64748b'>Escaneie no app do seu banco ou pague via Telefone</font>", pix_text_style)
     ]
 
-    t_totals = Table(totals_data, colWidths=[380, 140])
+    t_pix_block = Table([[d_qr, pix_info_cell]], colWidths=[65, 205])
+    t_pix_block.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('PADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+    ]))
+
+    totals_data = [
+        [Paragraph("<b>Subtotal Bruto:</b>", styles['Normal']), f"R$ {subtotal:.2f}"],
+        [Paragraph("<b>Desconto:</b>", styles['Normal']), f"- R$ {discount:.2f}"],
+        [Paragraph("<b>TOTAL LÍQUIDO:</b>", styles['Normal']), f"<b>R$ {final_amt:.2f}</b>"]
+    ]
+
+    t_totals = Table(totals_data, colWidths=[140, 90])
     t_totals.setStyle(TableStyle([
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('PADDING', (0, 0), (-1, -1), 5),
+        ('PADDING', (0, 0), (-1, -1), 4),
         ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor("#f1f5f9")),
         ('LINEABOVE', (0, 2), (-1, 2), 1, colors.HexColor("#0284c7")),
     ]))
-    story.append(t_totals)
+
+    # Tabela conjunta: Bloco PIX à esquerda + Totais à direita
+    footer_summary_table = Table([[t_pix_block, t_totals]], colWidths=[280, 240])
+    footer_summary_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('PADDING', (0, 0), (-1, -1), 0),
+    ]))
+
+    story.append(footer_summary_table)
 
     doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
     return buffer.getvalue()
+
 
 

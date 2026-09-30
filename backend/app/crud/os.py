@@ -181,6 +181,7 @@ async def get_financial_blocked_orders(db: AsyncSession) -> List[ServiceOrder]:
         select(ServiceOrder)
         .where(ServiceOrder.status.in_(blocked_statuses))
         .options(
+            selectinload(ServiceOrder.lens_model),
             selectinload(ServiceOrder.od_lens_inventory).selectinload(LensInventoryGrade.lens_model),
             selectinload(ServiceOrder.oe_lens_inventory).selectinload(LensInventoryGrade.lens_model),
             selectinload(ServiceOrder.partner_shop),
@@ -334,6 +335,7 @@ async def get_service_order(db: AsyncSession, os_id: uuid.UUID) -> Optional[Serv
         select(ServiceOrder)
         .where(ServiceOrder.id == os_id)
         .options(
+            selectinload(ServiceOrder.lens_model),
             selectinload(ServiceOrder.od_lens_inventory).selectinload(LensInventoryGrade.lens_model),
             selectinload(ServiceOrder.oe_lens_inventory).selectinload(LensInventoryGrade.lens_model),
             selectinload(ServiceOrder.partner_shop),
@@ -358,6 +360,7 @@ async def get_service_orders(
     limit: int = 100
 ) -> List[ServiceOrder]:
     query = select(ServiceOrder).options(
+        selectinload(ServiceOrder.lens_model),
         selectinload(ServiceOrder.od_lens_inventory).selectinload(LensInventoryGrade.lens_model),
         selectinload(ServiceOrder.oe_lens_inventory).selectinload(LensInventoryGrade.lens_model),
         selectinload(ServiceOrder.partner_shop),

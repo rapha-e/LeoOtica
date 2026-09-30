@@ -61,7 +61,7 @@ export default function RelatoriosHub({ currentUser }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'hsl(var(--primary))' }}>
             <BarChart3 size={15} />
-            <span>Inteligência Gerencial & BI • LeoÓtica 2.0</span>
+            <span>Inteligência Gerencial & BI • Nova Lab</span>
           </div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'hsl(var(--text-primary))', letterSpacing: '-0.6px', margin: '2px 0 0 0' }}>
             Central de Relatórios & BI

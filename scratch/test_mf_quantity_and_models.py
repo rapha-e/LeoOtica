@@ -12,7 +12,7 @@ def run_test():
     print("=" * 80)
 
     # Login
-    auth_resp = requests.post(f"{BASE_URL}/auth/login", json={"email": "admin@leootica.com.br", "password": "admin123"})
+    auth_resp = requests.post(f"{BASE_URL}/auth/login", json={"email": "admin@Nova Lab.com.br", "password": "admin123"})
     if auth_resp.status_code != 200:
         print(f"[FAIL] Falha na autenticacao: {auth_resp.text}")
         return

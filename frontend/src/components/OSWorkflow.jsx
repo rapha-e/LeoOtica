@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import api, { LensService, OSService } from '../services/api';
 
-import { Play, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Info, DollarSign, History, User, Clock, MapPin, ClipboardList, Trash2, Barcode, Camera, Keyboard } from 'lucide-react';
+import { Play, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Info, DollarSign, History, User, Clock, MapPin, ClipboardList, Trash2, Barcode, Camera, Keyboard, CheckCircle } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import OSDetail from './OSDetail';
 

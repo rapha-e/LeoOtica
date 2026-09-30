@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 # Encontra o caminho do .env localizado em backend/.env e carrega no os.environ
@@ -12,8 +13,15 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # URL do banco de dados (usando driver assíncrono asyncpg)
-    DATABASE_URL: str = "postgresql+asyncpg://leouser:leopassword@localhost:5432/leootica"
+    DATABASE_URL: str = "postgresql+asyncpg://leouser:leopassword@localhost:5432/Nova Lab"
     
+    # Configurações da Integração com a Focus NFe
+    FOCUS_NFE_TOKEN: Optional[str] = None
+    FOCUS_NFE_TOKEN_HOMOLOGACAO: Optional[str] = None
+    FOCUS_NFE_TOKEN_PRODUCAO: Optional[str] = None
+    FOCUS_NFE_ENV: str = "homologacao"  # 'homologacao' ou 'producao'
+    FOCUS_NFE_CNPJ_EMITENTE: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
         env_file_encoding="utf-8",
@@ -28,8 +36,9 @@ if getattr(sys, 'frozen', False):
     import os
     # Diretório onde o executável .exe está rodando
     base_dir = os.path.dirname(sys.executable)
-    db_path = os.path.join(base_dir, "leootica.db")
+    db_path = os.path.join(base_dir, "novalab.db")
     # Formata o caminho para usar barras normais no SQLAlchemy
     db_url = f"sqlite+aiosqlite:///{db_path.replace(os.sep, '/')}"
     settings.DATABASE_URL = db_url
+
 

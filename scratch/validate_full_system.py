@@ -12,7 +12,7 @@ def test_full_system_validation():
     print("\n1. Autenticando usuario Administrador...")
     auth_resp = requests.post(
         f"{BASE_URL}/auth/login",
-        json={"email": "admin@leootica.com.br", "password": "admin123"}
+        json={"email": "admin@Nova Lab.com.br", "password": "admin123"}
     )
     if auth_resp.status_code != 200:
         print(f" ERROR: Falha na autenticacao: {auth_resp.text}")

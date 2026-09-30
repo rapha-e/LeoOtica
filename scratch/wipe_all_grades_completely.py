@@ -2,10 +2,10 @@ import sqlite3
 import os
 
 db_paths = [
-    "backend/leootica.db",
+    "backend/Nova Lab.db",
     "backend/sql_app.db",
     "backend/app.db",
-    "leootica.db"
+    "Nova Lab.db"
 ]
 
 for path in db_paths:

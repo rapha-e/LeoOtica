@@ -23,7 +23,6 @@ import CatalogoFinanceiro from './components/CatalogoFinanceiro';
 import TabelaPrecos from './components/TabelaPrecos';
 import FechamentoFinanceiro from './components/FechamentoFinanceiro';
 import DashboardGerencial from './components/DashboardGerencial';
-import AssistenteIA from './components/AssistenteIA';
 import GerenciamentoUsuarios from './components/GerenciamentoUsuarios';
 import GlobalSearch from './components/GlobalSearch';
 import SmartMenuBar from './components/SmartMenu';
@@ -37,7 +36,8 @@ import OSDetail from './components/OSDetail';
 import FilaOrdensBloqueadas from './components/FilaOrdensBloqueadas';
 import DashboardDRE from './components/DashboardDRE';
 import RelatoriosHub from './pages/reports/RelatoriosHub';
-import { TrendingUp, Sparkles, Users, ChevronDown, Plus, Wrench, Settings, Building2, BarChart3, Lock } from 'lucide-react';
+import { maskCNPJ, maskPhone, maskCEP, maskIE } from './utils/maskHelper';
+import { TrendingUp, Users, ChevronDown, Plus, Wrench, Settings, Building2, BarChart3, Lock, Sparkles } from 'lucide-react';
 
 
 
@@ -98,6 +98,7 @@ function App() {
     cep: '71572-302',
     telephone: '61 99266-7281',
     cnpj: '58.032.958/0001-44',
+    ie: '',
     address: 'Avenida transversal quadra 23 conjunto B lote 27 apartamento 201'
   });
   const [isLabModalOpen, setIsLabModalOpen] = useState(false);
@@ -106,6 +107,7 @@ function App() {
     cep: '',
     telephone: '',
     cnpj: '',
+    ie: '',
     address: ''
   });
 
@@ -127,11 +129,12 @@ function App() {
   const handleOpenLabModal = () => {
     if (!currentUser) return;
     setLabForm({
-      name: laboratory.name,
-      cep: laboratory.cep,
-      telephone: laboratory.telephone,
-      cnpj: laboratory.cnpj,
-      address: laboratory.address
+      name: laboratory.name || '',
+      cep: maskCEP(laboratory.cep || ''),
+      telephone: maskPhone(laboratory.telephone || ''),
+      cnpj: maskCNPJ(laboratory.cnpj || ''),
+      ie: maskIE(laboratory.ie || ''),
+      address: laboratory.address || ''
     });
     setIsLabModalOpen(true);
   };
@@ -530,24 +533,17 @@ function App() {
             )}
           </div>
 
-          {/* GRUPO 4: Sistema & IA */}
+          {/* GRUPO 4: Sistema */}
           <div className="header-dropdown">
             <button 
               type="button"
-              className={`dropdown-trigger ${['assistente-ia', 'admin-users', 'cadastro-oticas', 'system-parameters'].includes(activeTab) ? 'active' : ''}`}
+              className={`dropdown-trigger ${['admin-users', 'cadastro-oticas', 'system-parameters'].includes(activeTab) ? 'active' : ''}`}
               onClick={() => setOpenDropdown(openDropdown === 'sistema' ? null : 'sistema')}
             >
-              <Sparkles size={16} /> Sistema & IA <ChevronDown size={14} />
+              <Settings size={16} /> Sistema <ChevronDown size={14} />
             </button>
             {openDropdown === 'sistema' && (
               <div className="dropdown-menu">
-                <button 
-                  type="button"
-                  className={`dropdown-item ${activeTab === 'assistente-ia' ? 'active' : ''}`}
-                  onClick={() => { setActiveTab('assistente-ia'); setOpenDropdown(null); }}
-                >
-                  <Sparkles size={14} /> Assistente IA
-                </button>
                 <button 
                   type="button"
                   className={`dropdown-item ${activeTab === 'cadastro-oticas' ? 'active' : ''}`}
@@ -711,7 +707,7 @@ function App() {
         )}
 
         {activeTab === 'billing' && (
-          <FechamentoFinanceiro laboratory={laboratory} />
+          <FechamentoFinanceiro laboratory={laboratory} currentUser={currentUser} />
         )}
         
         {activeTab === 'dashboard-gerencial' && (
@@ -747,10 +743,6 @@ function App() {
         />
 
         
-        {activeTab === 'assistente-ia' && (
-          <AssistenteIA />
-        )}
-
         {activeTab === 'admin-users' && currentUser.role === 'Administrador' && (
           <GerenciamentoUsuarios />
         )}
@@ -837,44 +829,62 @@ function App() {
                   <input 
                     type="text" 
                     className="form-control" 
+                    placeholder="00.000.000/0000-00"
                     value={labForm.cnpj}
-                    onChange={(e) => setLabForm({ ...labForm, cnpj: e.target.value })}
+                    onChange={(e) => setLabForm({ ...labForm, cnpj: maskCNPJ(e.target.value) })}
+                    maxLength={18}
                     required
                   />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Inscrição Estadual</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="Ex: 0712345600100 ou Isento"
+                    value={labForm.ie || ''}
+                    onChange={(e) => setLabForm({ ...labForm, ie: maskIE(e.target.value) })}
+                    maxLength={20}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: '15px' }}>
                 <div className="form-group">
                   <label className="form-label">Telefone *</label>
                   <input 
                     type="text" 
                     className="form-control" 
+                    placeholder="(00) 00000-0000"
                     value={labForm.telephone}
-                    onChange={(e) => setLabForm({ ...labForm, telephone: e.target.value })}
+                    onChange={(e) => setLabForm({ ...labForm, telephone: maskPhone(e.target.value) })}
+                    maxLength={15}
                     required
                   />
                 </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '15px' }}>
                 <div className="form-group">
                   <label className="form-label">CEP *</label>
                   <input 
                     type="text" 
                     className="form-control" 
+                    placeholder="00000-000"
                     value={labForm.cep}
-                    onChange={(e) => setLabForm({ ...labForm, cep: e.target.value })}
+                    onChange={(e) => setLabForm({ ...labForm, cep: maskCEP(e.target.value) })}
+                    maxLength={9}
                     required
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Endereço Completo *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={labForm.address}
-                    onChange={(e) => setLabForm({ ...labForm, address: e.target.value })}
-                    required
-                  />
-                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Endereço Completo *</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={labForm.address}
+                  onChange={(e) => setLabForm({ ...labForm, address: e.target.value })}
+                  required
+                />
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'end', marginTop: '15px' }}>

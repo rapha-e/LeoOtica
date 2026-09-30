@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Numeric, ForeignKey, DateTime, Text, Uuid
+from sqlalchemy import String, Numeric, ForeignKey, DateTime, Text, Uuid, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.core.database import Base
 
@@ -28,6 +28,7 @@ class AccountsPayable(Base):
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     supplier_name: Mapped[str] = mapped_column(String(150), nullable=False)
     document_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    payable_type: Mapped[Optional[str]] = mapped_column(String(100), default="FATURA_COMPRA", nullable=True)
     
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     amount_paid: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00, nullable=False)
@@ -38,6 +39,12 @@ class AccountsPayable(Base):
     
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("financial_categories.id", ondelete="SET NULL"), nullable=True)
     cost_center_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, ForeignKey("cost_centers.id", ondelete="SET NULL"), nullable=True)
+    
+    # Controle de Alertas com base na Data de Vencimento
+    alert_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    alert_dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    alert_days_before: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    dismissed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

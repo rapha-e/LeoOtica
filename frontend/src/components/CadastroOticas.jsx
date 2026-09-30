@@ -4,6 +4,7 @@ import {
   X, AlertCircle, RefreshCw, Filter, ShieldAlert 
 } from 'lucide-react';
 import { OpticalStoreService } from '../services/api';
+import { maskCNPJ, maskPhone, maskIE } from '../utils/maskHelper';
 
 const CadastroOticas = () => {
   const [stores, setStores] = useState([]);
@@ -66,39 +67,16 @@ const CadastroOticas = () => {
     loadStores();
   };
 
-  // Formata CNPJ dinamicamente
-  const formatCNPJ = (val) => {
-    const clean = val.replace(/\D/g, '').substring(0, 14);
-    if (clean.length <= 14) {
-      return clean
-        .replace(/^(\d{2})(\d)/, '$1.$2')
-        .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-        .replace(/\.(\d{3})(\d)/, '.$1/$2')
-        .replace(/\/(\d{4})(\d)/, '/$1-$2');
-    }
-    return clean;
-  };
-
-  // Formata Telefone dinamicamente
-  const formatPhone = (val) => {
-    const clean = val.replace(/\D/g, '').substring(0, 11);
-    if (clean.length <= 10) {
-      return clean
-        .replace(/^(\d{2})(\d)/, '($1) $2')
-        .replace(/(\d{4})(\d)/, '$1-$2');
-    } else {
-      return clean
-        .replace(/^(\d{2})(\d)/, '($1) $2')
-        .replace(/(\d{5})(\d)/, '$1-$2');
-    }
-  };
-
   const handleCnpjChange = (e) => {
-    setFormData({ ...formData, cnpj: formatCNPJ(e.target.value) });
+    setFormData({ ...formData, cnpj: maskCNPJ(e.target.value) });
   };
 
   const handlePhoneChange = (e) => {
-    setFormData({ ...formData, telephone: formatPhone(e.target.value) });
+    setFormData({ ...formData, telephone: maskPhone(e.target.value) });
+  };
+
+  const handleIeChange = (e) => {
+    setFormData({ ...formData, ie: maskIE(e.target.value) });
   };
 
   // Abre formulário para criação
@@ -124,9 +102,9 @@ const CadastroOticas = () => {
       id: store.id,
       corporate_name: store.corporate_name,
       trade_name: store.trade_name,
-      cnpj: store.cnpj,
-      ie: store.ie || '',
-      telephone: store.telephone || '',
+      cnpj: maskCNPJ(store.cnpj || ''),
+      ie: maskIE(store.ie || ''),
+      telephone: maskPhone(store.telephone || ''),
       email: store.email || '',
       address: store.address || '',
       is_active: store.is_active
@@ -427,6 +405,7 @@ const CadastroOticas = () => {
                     placeholder="00.000.000/0000-00"
                     value={formData.cnpj}
                     onChange={handleCnpjChange}
+                    maxLength={18}
                   />
                 </div>
 
@@ -435,9 +414,10 @@ const CadastroOticas = () => {
                   <input 
                     type="text" 
                     className="form-control" 
-                    placeholder="Inscrição Estadual"
+                    placeholder="Ex: 0712345600100 ou Isento"
                     value={formData.ie}
-                    onChange={(e) => setFormData({ ...formData, ie: e.target.value })}
+                    onChange={handleIeChange}
+                    maxLength={20}
                   />
                 </div>
               </div>
@@ -451,6 +431,7 @@ const CadastroOticas = () => {
                     placeholder="(00) 00000-0000"
                     value={formData.telephone}
                     onChange={handlePhoneChange}
+                    maxLength={15}
                   />
                 </div>
 

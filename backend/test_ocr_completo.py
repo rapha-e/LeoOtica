@@ -5,7 +5,7 @@ import json
 import os
 
 def setup_partner_shop():
-    db_path = os.path.join(os.path.dirname(__file__), "leootica.db")
+    db_path = os.path.join(os.path.dirname(__file__), "Nova Lab.db")
     print(f"Conectando ao banco SQLite local em: {db_path}")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()

@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from sqlalchemy import String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.core.database import Base
@@ -12,3 +13,4 @@ class Laboratory(Base):
     cep: Mapped[str] = mapped_column(String(20), nullable=False)
     telephone: Mapped[str] = mapped_column(String(50), nullable=False)
     cnpj: Mapped[str] = mapped_column(String(25), nullable=False)
+    ie: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)

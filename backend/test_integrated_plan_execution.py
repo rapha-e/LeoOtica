@@ -29,7 +29,7 @@ from fastapi import HTTPException
 async def run_integrated_test_suite():
     results = {}
     print("==========================================================================")
-    print("EXECUCAO DO PLANO DE TESTES INTEGRADO (NOVA LAB / LEOOTICAS)")
+    print("EXECUCAO DO PLANO DE TESTES INTEGRADO (NOVA LAB / Nova Lab)")
     print("==========================================================================")
 
     store_id = None

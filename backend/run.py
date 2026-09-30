@@ -10,5 +10,8 @@ import uvicorn
 from backend.app.main import app
 
 if __name__ == "__main__":
-    # Executa o uvicorn ligando o app FastAPI na porta 8000 com auto-reload ativo
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+    is_frozen = getattr(sys, "frozen", False)
+    if is_frozen:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    else:
+        uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)

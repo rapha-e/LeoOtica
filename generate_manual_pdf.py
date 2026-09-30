@@ -190,7 +190,7 @@ def build_pdf(filename):
     utilizando as credenciais mestre de administrador pré-configuradas. Este acesso desbloqueia os menus corporativos 
     de parametrização comercial e gestão financeira.
     <br/><br/>
-    • <b>E-mail ou Login:</b> <code>admin</code> (ou <code>admin@leootica.com.br</code>)<br/>
+    • <b>E-mail ou Login:</b> <code>admin</code> (ou <code>admin@Nova Lab.com.br</code>)<br/>
     • <b>Senha Inicial:</b> <code>admin</code>
     """
     story.append(Paragraph(p1_text, body_style))

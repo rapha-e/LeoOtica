@@ -283,6 +283,7 @@ export const BillingService = {
   getPendingOrdersByStore: (storeId) => api.get(`/billing/pending/${storeId}`),
   createCycle: (data) => api.post('/billing/', data),
   payCycle: (cycleId) => api.post(`/billing/${cycleId}/pay`),
+  updateStatus: (cycleId, status) => api.put(`/billing/${cycleId}/status`, { status }),
   getCycle: (cycleId) => api.get(`/billing/${cycleId}`),
   listCycles: (opticalStoreId = null) => {
     let url = '/billing/';
@@ -295,9 +296,12 @@ export const BillingService = {
   exportExcel: (cycleId) => api.get(`/billing/${cycleId}/export-excel`, { responseType: 'blob' }),
   getBillingKpis: () => api.get('/billing/kpis'),
   emitNfe: (cycleId) => api.post(`/billing/${cycleId}/nfe`),
-  cancelNfe: (cycleId) => api.post(`/billing/${cycleId}/nfe/cancel`),
+  syncNfe: (cycleId) => api.post(`/billing/${cycleId}/nfe/sync`),
+  cancelNfe: (cycleId, justification = null) => 
+    api.post(`/billing/${cycleId}/nfe/cancel${justification ? `?justification=${encodeURIComponent(justification)}` : ''}`),
   getNfeXml: (cycleId) => api.get(`/billing/${cycleId}/nfe/xml`, { responseType: 'blob' }),
   getNfeDanfe: (cycleId) => api.get(`/billing/${cycleId}/nfe/danfe`, { responseType: 'blob' }),
+  getFocusNfeStatus: () => api.get('/billing/nfe/status-connection'),
 };
 
 

@@ -148,27 +148,79 @@ async def enrich_billing_item(db_or_item: Any, item_or_none: Any = None):
     # 1. Tipo / Modelo da Lente (Exatamente conforme cadastrado no sistema)
     lens_name = None
     
+    def _extract_lens_model_name(lm) -> Optional[str]:
+        if not lm:
+            return None
+        # 1. Se tiver nome comercial explícito cadastrado no modelo
+        name_val = getattr(lm, "name", None)
+        if name_val and str(name_val).strip() and str(name_val).strip().lower() not in ["none", "lente", ""]:
+            return str(name_val).strip()
+        
+        brand = (getattr(lm, "brand", None) or "").strip()
+        material = (getattr(lm, "material", None) or "").strip()
+        treatment = (getattr(lm, "treatment", None) or "").strip()
+        idx = getattr(lm, "refractive_index", None)
+        idx_str = f"{float(idx):.2f}" if idx is not None else ""
+        
+        # Se o brand já é um nome completo descritivo
+        if brand and any(tok in brand.lower() for tok in ["lp ", "mf ", "bloco", "visão", "visao", "1.", "blue", "photo", "cr-39", "zeiss", "essilor", "hoya", "perego", "varilux"]):
+            return brand
+            
+        parts = []
+        if brand and brand.lower() not in ["lente", "geral", "padrao", "padrão"]:
+            parts.append(brand)
+        if material and (not brand or material.lower() not in brand.lower()):
+            parts.append(material)
+        if idx_str and (not brand or idx_str not in brand) and (not material or idx_str not in material):
+            parts.append(idx_str)
+        if treatment and treatment.lower() not in ["nenhum", "sem tratamento", "incolor"] and (not brand or treatment.lower() not in brand.lower()):
+            parts.append(treatment)
+            
+        if parts:
+            full_str = " ".join(parts)
+            if not any(w in full_str.lower() for w in ["lente", "bloco", "lp", "mf"]):
+                return f"Lente {full_str}"
+            return full_str
+        return brand or material or "Lente Oftálmica"
+
     if getattr(order, "lens_model", None):
-        lm = order.lens_model
-        lens_name = f"{lm.brand} {lm.material}"
-        if lm.refractive_index:
-            lens_name += f" (n={lm.refractive_index})"
-    elif getattr(order, "od_lens_inventory", None) and order.od_lens_inventory.lens_model:
-        lm = order.od_lens_inventory.lens_model
-        lens_name = f"{lm.brand} {lm.material}"
-        if lm.refractive_index:
-            lens_name += f" (n={lm.refractive_index})"
-    elif getattr(order, "oe_lens_inventory", None) and order.oe_lens_inventory.lens_model:
-        lm = order.oe_lens_inventory.lens_model
-        lens_name = f"{lm.brand} {lm.material}"
-        if lm.refractive_index:
-            lens_name += f" (n={lm.refractive_index})"
+        lens_name = _extract_lens_model_name(order.lens_model)
+    elif getattr(order, "od_lens_inventory", None) and getattr(order.od_lens_inventory, "lens_model", None):
+        lens_name = _extract_lens_model_name(order.od_lens_inventory.lens_model)
+    elif getattr(order, "oe_lens_inventory", None) and getattr(order.oe_lens_inventory, "lens_model", None):
+        lens_name = _extract_lens_model_name(order.oe_lens_inventory.lens_model)
+
+    if not lens_name and getattr(order, "lens_model_id", None) and db is not None:
+        try:
+            from backend.app.models.lens import LensModel
+            lm_obj = (await db.execute(select(LensModel).where(LensModel.id == order.lens_model_id))).scalar_one_or_none()
+            if lm_obj:
+                lens_name = _extract_lens_model_name(lm_obj)
+        except Exception:
+            pass
             
     if not lens_name and getattr(order, "items", None):
         prod_items = [i for i in order.items if getattr(i, "entity_type", "") == 'product']
         if prod_items:
-            names = [getattr(p, "name", None) or "Lente Oftálmica" for p in prod_items]
-            lens_name = ", ".join(names)
+            names = []
+            for p in prod_items:
+                p_name = getattr(p, "name", None)
+                if p_name and str(p_name).strip() and not str(p_name).startswith("Item ("):
+                    names.append(str(p_name).strip())
+                elif db is not None and getattr(p, "entity_id", None):
+                    try:
+                        from backend.app.models.financial_catalog import Product
+                        p_res = await db.execute(select(Product).options(selectinload(Product.lens_model)).where(Product.id == p.entity_id))
+                        p_obj = p_res.scalar_one_or_none()
+                        if p_obj:
+                            if p_obj.lens_model:
+                                names.append(_extract_lens_model_name(p_obj.lens_model))
+                            elif p_obj.name:
+                                names.append(p_obj.name)
+                    except Exception:
+                        pass
+            if names:
+                lens_name = ", ".join(names)
 
     if not lens_name:
         if getattr(order, "os_type", "") == "REPARO_SERVICO":
@@ -289,14 +341,11 @@ async def enrich_billing_item(db_or_item: Any, item_or_none: Any = None):
     if getattr(order, "os_type", "") != "REPARO_SERVICO" and (lens_price > 0 or not order_items):
         lens_qty = 2  # Par de lentes por padrão para cada OS de produção
         prod_items = [i for i in order_items if getattr(i, "entity_type", "") == "product"]
-        lens_desc = "Lente Oftálmica Visão Simples / Digital"
+        lens_desc = "Lente Oftálmica"
         if prod_items:
             sum_qty = sum(getattr(pi, "quantity", 1) for pi in prod_items)
             if sum_qty > 0:
                 lens_qty = sum_qty
-            first_p = catalog_cache["product"].get(prod_items[0].entity_id)
-            if first_p and getattr(first_p, "description", None):
-                lens_desc = first_p.description
 
         unit_p = round(lens_price / lens_qty, 2) if lens_qty > 0 else lens_price
         detailed.append(OSItemDetail(
@@ -402,7 +451,10 @@ async def list_billing_cycles(
     """
     query = select(BillingCycle).options(
         selectinload(BillingCycle.optical_store),
-        selectinload(BillingCycle.items).selectinload(BillingItem.service_order),
+        selectinload(BillingCycle.items).selectinload(BillingItem.service_order).selectinload(ServiceOrder.lens_model),
+        selectinload(BillingCycle.items).selectinload(BillingItem.service_order).selectinload(ServiceOrder.od_lens_inventory).selectinload(LensInventoryGrade.lens_model),
+        selectinload(BillingCycle.items).selectinload(BillingItem.service_order).selectinload(ServiceOrder.oe_lens_inventory).selectinload(LensInventoryGrade.lens_model),
+        selectinload(BillingCycle.items).selectinload(BillingItem.service_order).selectinload(ServiceOrder.items),
         selectinload(BillingCycle.nfe_saida)
     )
     
@@ -448,7 +500,12 @@ async def create_billing_cycle(
         select(ServiceOrder)
         .outerjoin(BillingItem, BillingItem.service_order_id == ServiceOrder.id)
         .where(ServiceOrder.id.in_(service_order_ids))
-        .options(selectinload(ServiceOrder.items))
+        .options(
+            selectinload(ServiceOrder.lens_model),
+            selectinload(ServiceOrder.od_lens_inventory).selectinload(LensInventoryGrade.lens_model),
+            selectinload(ServiceOrder.oe_lens_inventory).selectinload(LensInventoryGrade.lens_model),
+            selectinload(ServiceOrder.items)
+        )
     )
     os_result = await db.execute(os_query)
     orders = os_result.scalars().all()
@@ -536,6 +593,30 @@ async def pay_billing_cycle(db: AsyncSession, cycle_id: uuid.UUID) -> Optional[B
     db_cycle.status = "PAGO"
     db_cycle.paid_at = datetime.now(timezone.utc)
     
+    db.add(db_cycle)
+    await db.commit()
+    await db.refresh(db_cycle)
+    
+    return db_cycle
+
+async def update_billing_cycle_status(db: AsyncSession, cycle_id: uuid.UUID, new_status: str) -> Optional[BillingCycle]:
+    """
+    Atualiza o status de um ciclo de faturamento (PAGO ou FECHADO/Pendente).
+    """
+    db_cycle = await get_billing_cycle(db, cycle_id)
+    if not db_cycle:
+        return None
+        
+    clean_status = new_status.strip().upper()
+    if clean_status not in ["PAGO", "FECHADO"]:
+        raise ValueError("Status inválido. Permitido apenas PAGO ou FECHADO.")
+        
+    db_cycle.status = clean_status
+    if clean_status == "PAGO":
+        db_cycle.paid_at = datetime.now(timezone.utc)
+    else:
+        db_cycle.paid_at = None
+        
     db.add(db_cycle)
     await db.commit()
     await db.refresh(db_cycle)

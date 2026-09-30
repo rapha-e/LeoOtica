@@ -1,7 +1,7 @@
-# 📊 Relatório Arquitetural & Funcional do Sistema LeoÓtica
+# 📊 Relatório Arquitetural & Funcional do Sistema Nova Lab
 **Documento de Especificação Técnica para Criação do Módulo / Aba de Relatórios**
 
-* **Sistema:** LeoÓtica — Solução ERP/MES/WMS para Laboratórios Óticos Industriais
+* **Sistema:** Nova Lab — Solução ERP/MES/WMS para Laboratórios Óticos Industriais
 * **Versão:** 2.0 Enterprise
 * **Stack Tecnológica:**
   * **Backend:** Python 3.12, FastAPI (Assíncrono), SQLAlchemy 2.0 (Async), SQLite / PostgreSQL
@@ -12,7 +12,7 @@
 
 ## 1. Visão Geral e Arquitetura do Sistema
 
-O **LeoÓtica** é uma plataforma integrada de gestão fabril e comercial projetada para controlar todo o ciclo de vida de um laboratório óptico:
+O **Nova Lab** é uma plataforma integrada de gestão fabril e comercial projetada para controlar todo o ciclo de vida de um laboratório óptico:
 1. **Entrada de Pedidos:** Recepção de receitas (via IA OCR, Bipagem USB ou Digitação) e validação de crédito/inadimplência da ótica cliente.
 2. **Triagem & Geometria:** Validação do diâmetro físico da lente vs medidas da armação (A, B, DBL, ED) e transposição clínica de grau cilíndrico (+ para -).
 3. **Alocação de Estoque Multimatriz:** Separação atômica de insumos em 5 matrizes ópticas (`LP_GRADE`, `GRADE_167`, `MF_ACB`, `MF_BLOCO`, `BLOCO_VS`).

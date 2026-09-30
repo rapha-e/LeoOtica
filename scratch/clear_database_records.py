@@ -61,8 +61,8 @@ async def clear_database_records():
 
     # Copia o banco de dados zerado para a pasta dist (se existir)
     backend_dir = os.path.abspath("backend")
-    db_source = os.path.join(backend_dir, "leootica.db")
-    db_dest = os.path.join(backend_dir, "dist", "leootica.db")
+    db_source = os.path.join(backend_dir, "Nova Lab.db")
+    db_dest = os.path.join(backend_dir, "dist", "Nova Lab.db")
     if os.path.exists(os.path.dirname(db_dest)) and os.path.exists(db_source):
         print(f"Copiando banco de dados zerado para a distribuicao: {db_dest}")
         shutil.copy2(db_source, db_dest)

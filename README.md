@@ -1,6 +1,6 @@
-# LeoÓticas - Módulo de Estoque e Grade de Lentes (MVP)
+# Nova Lab - Módulo de Estoque e Grade de Lentes (MVP)
 
-Este é o MVP (Mínimo Produto Viável) do sistema de controle de inventário tridimensional (Grade Óptica) para a fábrica LeoÓticas. O sistema é composto por uma API FastAPI assíncrona conectada a um banco de dados PostgreSQL e um frontend PWA responsivo em React projetado para operação em smartphones através da rede Wi-Fi local.
+Este é o MVP (Mínimo Produto Viável) do sistema de controle de inventário tridimensional (Grade Óptica) para a fábrica Nova Lab. O sistema é composto por uma API FastAPI assíncrona conectada a um banco de dados PostgreSQL e um frontend PWA responsivo em React projetado para operação em smartphones através da rede Wi-Fi local.
 
 ---
 

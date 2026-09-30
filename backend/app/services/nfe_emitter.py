@@ -57,6 +57,7 @@ def generate_nfe_xml(cycle: BillingCycle, nfe_number: int, key: str, laboratory:
     lab_cep = "".join(filter(str.isdigit, laboratory.cep if laboratory else "71572302")).zfill(8)
     lab_phone = laboratory.telephone if laboratory else "61 99266-7281"
     lab_address = laboratory.address if laboratory else "Área Especial, Lote 1, Brasília - DF"
+    lab_ie = "".join(filter(str.isdigit, laboratory.ie or "")) if (laboratory and getattr(laboratory, "ie", None)) else "111222333444"
     
     # Faz um split simples para tentar obter rua e número
     addr_parts = lab_address.split(",")
@@ -106,7 +107,7 @@ def generate_nfe_xml(cycle: BillingCycle, nfe_number: int, key: str, laboratory:
         <xPais>BRASIL</xPais>
         <fone>{lab_phone}</fone>
       </enderEmit>
-      <IE>111222333444</IE>
+      <IE>{lab_ie or "ISENTO"}</IE>
       <CRT>1</CRT>
     </emit>
     <dest>
@@ -312,12 +313,13 @@ def generate_danfe_pdf(cycle: BillingCycle, nfe_status: str, nfe_number: int, ke
     # Coluna 1: Emitente (215pt) | Coluna 2: Indicação DANFE (100pt) | Coluna 3: Código de barras & Chave (220pt)
     col_widths = [215, 100, 220]
     
+    lab_ie = laboratory.ie if (laboratory and getattr(laboratory, "ie", None)) else "ISENTO"
     emit_p = Paragraph(
         f"<b>{lab_name.upper()}</b><br/>"
         f"{lab_address}<br/>"
         f"CEP: {lab_cep}<br/>"
         f"Telefone: {lab_phone}<br/>"
-        f"CNPJ: {lab_cnpj} | IE: 111.222.333.444", 
+        f"CNPJ: {lab_cnpj} | IE: {lab_ie}", 
         style_emit_info
     )
     

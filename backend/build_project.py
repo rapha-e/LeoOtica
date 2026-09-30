@@ -61,17 +61,27 @@ def main():
         f'--collect-all uvicorn '
         f'--collect-all fastapi '
         f'--collect-all reportlab '
+        f'--collect-all openpyxl '
+        f'--collect-all sqlalchemy '
+        f'--collect-all pydantic '
+        f'--collect-all pydantic_settings '
         f'--hidden-import aiosqlite '
         f'--hidden-import bcrypt '
         f'--hidden-import email_validator '
+        f'--hidden-import greenlet '
+        f'--hidden-import uvicorn.loops.auto '
+        f'--hidden-import uvicorn.protocols.http.auto '
+        f'--hidden-import uvicorn.protocols.websockets.auto '
+        f'--hidden-import uvicorn.lifespan.on '
+        f'--hidden-import uvicorn.lifespan.off '
         f'run.py'
     )
     
     run_command(pyinstaller_cmd, cwd=backend_dir)
     
     # Copia o banco de dados para a pasta dist
-    db_source = os.path.join(backend_dir, "leootica.db")
-    db_dest = os.path.join(backend_dir, "dist", "leootica.db")
+    db_source = os.path.join(backend_dir, "Nova Lab.db")
+    db_dest = os.path.join(backend_dir, "dist", "Nova Lab.db")
     if os.path.exists(db_source):
         print(f"Copiando banco de dados para: {db_dest}")
         shutil.copy2(db_source, db_dest)

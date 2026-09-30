@@ -34,7 +34,7 @@ class TestOSBillingAndStatus(unittest.IsolatedAsyncioTestCase):
             # 1. Cadastra uma Ótica Comercial de teste
             self.store = OpticalStore(
                 corporate_name="Optica Leo Comercial Ltda",
-                trade_name="Leo Ótica Comercial",
+                trade_name="Nova Lab Comercial",
                 cnpj="99.999.999/0001-99",
                 is_active=True
             )
