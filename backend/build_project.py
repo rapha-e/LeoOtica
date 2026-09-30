@@ -80,11 +80,19 @@ def main():
     run_command(pyinstaller_cmd, cwd=backend_dir)
     
     # Copia o banco de dados para a pasta dist
-    db_source = os.path.join(backend_dir, "Nova Lab.db")
-    db_dest = os.path.join(backend_dir, "dist", "Nova Lab.db")
-    if os.path.exists(db_source):
-        print(f"Copiando banco de dados para: {db_dest}")
-        shutil.copy2(db_source, db_dest)
+    for db_name in ["novalab.db", "Nova Lab.db"]:
+        db_source = os.path.join(backend_dir, db_name)
+        if os.path.exists(db_source):
+            db_dest = os.path.join(backend_dir, "dist", db_name)
+            print(f"Copiando banco de dados {db_name} para: {db_dest}")
+            shutil.copy2(db_source, db_dest)
+            
+    # Copia o arquivo .env para a pasta dist
+    env_source = os.path.join(backend_dir, ".env")
+    if os.path.exists(env_source):
+        env_dest = os.path.join(backend_dir, "dist", ".env")
+        print(f"Copiando .env para: {env_dest}")
+        shutil.copy2(env_source, env_dest)
             
     executable_path = os.path.join(backend_dir, "dist", "Nova Lab V 2.0.exe")
     if os.path.exists(executable_path):

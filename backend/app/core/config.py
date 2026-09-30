@@ -30,12 +30,19 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Se estiver rodando como executável compilado (PyInstaller), força o uso do SQLite local
+# Se estiver rodando como executável compilado (PyInstaller), força o uso do SQLite local e carrega o .env do diretório do executável
 import sys
 if getattr(sys, 'frozen', False):
     import os
     # Diretório onde o executável .exe está rodando
     base_dir = os.path.dirname(sys.executable)
+    exe_env = os.path.join(base_dir, ".env")
+    if os.path.exists(exe_env):
+        load_dotenv(exe_env, override=True)
+        for field in ["FOCUS_NFE_TOKEN", "FOCUS_NFE_TOKEN_HOMOLOGACAO", "FOCUS_NFE_TOKEN_PRODUCAO", "FOCUS_NFE_ENV", "FOCUS_NFE_CNPJ_EMITENTE"]:
+            val = os.getenv(field)
+            if val is not None:
+                setattr(settings, field, val)
     db_path = os.path.join(base_dir, "novalab.db")
     # Formata o caminho para usar barras normais no SQLAlchemy
     db_url = f"sqlite+aiosqlite:///{db_path.replace(os.sep, '/')}"
